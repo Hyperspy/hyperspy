@@ -7279,7 +7279,10 @@ class BaseSignal(
             except ImportError:
                 raise RuntimeError("`dask_image` is required to remove spikes lazily.")
         else:
-            from scipy.ndimage import median_filter
+            if is_cupy_array(self.data):
+                from cupyx.scipy.ndimage import median_filter
+            else:
+                from scipy.ndimage import median_filter
 
         footprint = _get_footprint(self.data, axes=axes, size=size, **kwargs)
         # Set middle value to False to exclude from the median calculation

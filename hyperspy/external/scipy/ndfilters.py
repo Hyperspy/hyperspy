@@ -75,11 +75,11 @@ def _normalize_sequence(input, rank):
 def _get_footprint(
         input, size=None, footprint=None, mode="reflect", origin=0, axes=None
         ):
-    
+
     if (size is not None) and (footprint is not None):
         warnings.warn("ignoring size because footprint is set",
                       UserWarning, stacklevel=3)
-    input = np.asarray(input)
+    # input = np.asarray(input)
     if np.iscomplexobj(input):
         raise TypeError('Complex type not supported')
     axes = _check_axes(axes, input.ndim)
@@ -98,7 +98,7 @@ def _get_footprint(
         for o, ax in zip(origins, axes):
             origins_temp[ax] = o
         origins = origins_temp
-    
+
         if not isinstance(mode, str) and isinstance(mode, Iterable):
             # set mode = 'constant' for any axes not being filtered
             modes = _normalize_sequence(mode, num_axes)
@@ -106,7 +106,7 @@ def _get_footprint(
             for m, ax in zip(modes, axes):
                 modes_temp[ax] = m
             mode = modes_temp
-    
+
         # insert singleton dimension along any non-filtered axes
         if footprint.ndim != num_axes:
             raise RuntimeError("footprint array has incorrect shape")
@@ -114,5 +114,5 @@ def _get_footprint(
             footprint,
             tuple(ax for ax in range(input.ndim) if ax not in axes)
         )
-    
+
     return footprint
