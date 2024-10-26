@@ -456,6 +456,20 @@ def test_remove_spikes(signal_dimension, lazy):
     )
 
 
+@pytest.mark.parametrize("spike_value", (-1e10, -1e4, 1e4, 1e10))
+def test_remove_spikes_value(spike_value):
+    # check that the value of the corrected spike
+    # is independent of the spike value
+    s = hs.data.two_gaussians()
+
+    index0 = (10, 5, 800)
+    expected_value = 271
+    s.data[index0] = spike_value  # initial value is 310
+
+    s.remove_spikes()
+    assert s.data[index0] == expected_value
+
+
 @pytest.mark.parametrize("lazy", (False, True))
 def test_remove_spikes_inplace(lazy):
     if lazy:
@@ -514,6 +528,15 @@ def test_remove_spikes_axes(lazy):
 
 def test_remove_spikes_error():
     s = hs.data.two_gaussians()
+
+    with pytest.raises(ValueError):
+        s.remove_spikes(threshold_factor=-1)
+
+    with pytest.raises(RuntimeError):
+        s.remove_spikes(origin=1)
+
+    with pytest.raises(ValueError):
+        s.remove_spikes(size=2)
 
     # create a signals with nan
     s.data = np.where(s.data > 500, np.nan, s.data)

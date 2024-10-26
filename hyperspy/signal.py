@@ -7191,7 +7191,7 @@ class BaseSignal(
         threshold_factor : int, float
             Factor used in the thresholding calculation. Higher value will
             give higher threshold value to find spikes and less spikes will
-            removed. Default is 5.
+            removed. It must a positive number. Default is 5.
         axes : int, str, :class:`~hyperspy.axes.DataAxis` or tuple
             Specify the axes used for calculating the local median. It is recommended
             to use axes of similar nature where the local median is representative
@@ -7242,6 +7242,18 @@ class BaseSignal(
 
         >>> s.remove_spikes(size=5)
         """
+        if threshold_factor <= 0:
+            raise ValueError("`threshold_factor` must a positive number.")
+
+        if "origin" in kwargs.keys():
+            raise RuntimeError(
+                "`origin` argument is not supported, use `footprint` instead."
+            )
+        size = kwargs.pop("size", 3)
+        if size % 2 == 0:
+            # Don't support even number to simplify setting footprint
+            raise ValueError("Only odd number are supported for the `size` argument.")
+
         if np.any(np.isnan(self.data)):
             raise ValueError("Data containing `nan` are not supported.")
 
@@ -7259,7 +7271,6 @@ class BaseSignal(
                 axes = None
 
         axes = tuple(axis.index_in_array for axis in axes)
-        kwargs.setdefault("size", 3)
 
         if self._lazy:
             try:
@@ -7270,14 +7281,17 @@ class BaseSignal(
         else:
             from scipy.ndimage import median_filter
 
-        footprint = _get_footprint(self.data, axes=axes, **kwargs)
-        kwargs.pop("size")
+        footprint = _get_footprint(self.data, axes=axes, size=size, **kwargs)
+        # Set middle value to False to exclude from the median calculation
+        idx = tuple(size_ // 2 for size_ in footprint.shape)
+        footprint[idx] = False
 
         med = median_filter(self.data, footprint=footprint, **kwargs)
         std = np.std(self.data, axis=axes, keepdims=True)
 
-        threshold = med + std * threshold_factor
-        corrected_data = np.where(self.data > threshold, med, self.data)
+        corrected_data = np.where(
+            np.abs(self.data - med) > std * threshold_factor, med, self.data
+        )
 
         if inplace:
             self.data[:] = corrected_data
