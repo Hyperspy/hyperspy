@@ -140,7 +140,7 @@ learning = [
     "scikit-learn>=1.0.1",
 ]
 speed = [
-    "numba",
+    "numba>=0.53",
     "numexpr",
 ]
 tests = [

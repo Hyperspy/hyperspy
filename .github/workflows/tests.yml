@@ -16,36 +16,36 @@ jobs:
       matrix:
         os: [ubuntu, windows, macos]
         os_version: [latest]
-        PYTHON_VERSION: ['3.9', '3.10', ]
+        PYTHON_VERSION: ['3.10', '3.11', ]
         PIP_SELECTOR: ['[all, tests, coverage]']
         include:
           # test oldest supported version of main dependencies on python 3.8
           - os: ubuntu
             os_version: latest
-            PYTHON_VERSION: '3.8'
+            PYTHON_VERSION: '3.9'
             PIP_SELECTOR: '[all, tests, coverage]'
             OLDEST_SUPPORTED_VERSION: true
             # Don't install pillow 10.4.0 because of its incompatibility with numpy 1.20.x
             # https://github.com/python-pillow/Pillow/pull/8187
-            DEPENDENCIES: dask[array]==2022.9.2 matplotlib==3.6.0 numba==0.52 numpy==1.20.0 scipy==1.6 scikit-image==0.18 scikit-learn==1.0.1 pillow!=10.4.0
+            DEPENDENCIES: dask[array]==2022.9.2 matplotlib==3.6.0 numba==0.53 numpy==1.20.0 scipy==1.6 scikit-image==0.18 scikit-learn==1.0.1 pillow!=10.4.0
             LABEL: -oldest
           # test minimum requirement
           - os: ubuntu
             os_version: latest
-            PYTHON_VERSION: '3.12'
+            PYTHON_VERSION: '3.13'
             PIP_SELECTOR: '[tests, coverage]'
             LABEL: -minimum
           - os: ubuntu
             os_version: latest
-            PYTHON_VERSION: '3.8'
+            PYTHON_VERSION: '3.9'
             PIP_SELECTOR: '[all, tests, coverage]'
           - os: ubuntu
             os_version: latest
-            PYTHON_VERSION: '3.11'
+            PYTHON_VERSION: '3.12'
             PIP_SELECTOR: '[all, tests, coverage]'
           - os: macos
             os_version: '13'
-            PYTHON_VERSION: '3.11'
+            PYTHON_VERSION: '3.12'
             PIP_SELECTOR: '[all, tests, coverage]'
 
     steps:
@@ -84,15 +84,27 @@ jobs:
           python --version
           pip --version
 
-      - name: Install oldest supported version
-        if: ${{ matrix.OLDEST_SUPPORTED_VERSION }}
+      - name: Install traits dev for python 3.13
+        if: ${{ matrix.PYTHON_VERSION == '3.13' }}
         run: |
-          pip install ${{ matrix.DEPENDENCIES }} -v
+          # traits release with python 3.13 pending
+          pip install git+https://github.com/enthought/traits.git
+
+      - name: Install scikit-image 0.25.0-rc1
+        if: ${{ matrix.PYTHON_VERSION == '3.13' }}
+        run: |
+          # speed up build until scikit-image 0.25 is released
+          pip install scikit-image --pre
 
       - name: Install
         shell: bash
         run: |
           pip install ${{ env.PIP_ARGS }} .'${{ matrix.PIP_SELECTOR }}'
+
+      - name: Install oldest supported version
+        if: ${{ matrix.OLDEST_SUPPORTED_VERSION }}
+        run: |
+          pip install ${{ matrix.DEPENDENCIES }} -v
 
       - name: Pip list
         run: |
