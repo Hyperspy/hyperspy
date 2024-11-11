@@ -1528,8 +1528,24 @@ def plot_spectra(
         If True, the plot will update when the data are changed. Only supported
         with style='overlap' and a list of signal with navigation dimension 0.
         If None (default), update the plot only for style='overlap'.
-    normalise : bool, default False
-        If True, the data are normalised to the [0, 1] interval in the plot.
+    
+    normalise : False (default), or True, or int or float, or (list of) int or float
+        If True, the min and max of the entire signal is normalised to the [0, 1] range in the plot. 
+        
+        If int or float, the min of the entire signal and the value of the signal at the provided index or 
+        calibrated units position (for int or float respectively) is normalised to the [0, 1] range in the plot. 
+        
+        If list of (int or float), the min of the entire signal, and the 'max' or 'mean' (determined by 
+        normalise_type parameter) of the signal in the provided index or calibrated units interval 
+        (for int or float respectively) is normalised to the [0,1] range in the plot.
+        
+    normalise_type :  str ``'max'`` (default), { ``'mean'`` }
+        If ``'max'``, the np.max() of the signal at the position or interval (provided in 'normalise' 
+        parameter) is normalised to 1. Useful for normalisation at a position or interval containing a peak.
+        
+        If ``'mean'``, the np.mean() of the signal interval (provided in 'normalise' parameter) is 
+        normalised to 1. Useful for normalisation over an interval containing a slope or non-zero plateau.
+        
     **kwargs : dict
         Depending on the style used, the keyword arguments are passed to different functions
 
