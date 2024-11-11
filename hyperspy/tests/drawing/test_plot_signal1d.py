@@ -57,8 +57,8 @@ def _generate_filename_list(style):
     filename_list2 = []
 
     for filename in filename_list:
-        for i in range(0, 4):
-            filename_list2.append(baseline_path.joinpath(f"{filename}{i}.png"))
+        for suffix in ["True", "None"]:
+            filename_list2.append(baseline_path.joinpath(f"{filename}-{suffix}.png"))
 
     return filename_list2
 
@@ -89,14 +89,14 @@ def setup_teardown(request, scope="class"):
     # expected images are the same.
     if mpl_generate_path_cmdopt is None and plot_testing:
         for filename in _generate_filename_list(style):
-            copyfile(f"{str(filename)[:-5]}.png", filename)
+            copyfile(f"{str(filename)[:-9]}.png", filename)
     yield
     # TEARDOWN
     # Create the baseline images: copy one baseline image for each test
     # and remove the other ones.
-    if mpl_generate_path_cmdopt:
+    if mpl_generate_path_cmdopt and plot_testing:
         for filename in _generate_filename_list(style):
-            copyfile(filename, f"{str(filename)[:-5]}.png")
+            copyfile(filename, f"{str(filename)[:-9]}.png")
     if plot_testing:
         # Delete the images that have been created in 'setup_class'
         for filename in _generate_filename_list(style):
@@ -119,51 +119,49 @@ class TestPlotSpectra:
         parameters = []
         for s in style:
             for fig in [True, None]:
-                for ax in [True, None]:
-                    parameters.append([s, fig, ax])
+                parameters.append([s, fig])
         return parameters
 
-    def _generate_ids(style, duplicate=4):
-        ids = []
-        for s in style:
-            ids.extend([s] * duplicate)
-        return ids
-
-    @pytest.mark.parametrize(
-        ("style", "fig", "ax"), _generate_parameters(style), ids=_generate_ids(style)
-    )
+    @pytest.mark.parametrize(("style", "fig"), _generate_parameters(style))
     @pytest.mark.mpl_image_compare(
         baseline_dir=baseline_dir, tolerance=default_tol, style=style_pytest_mpl
     )
-    def test_plot_spectra(self, style, fig, ax):
+    def test_plot_spectra(self, style, fig):
+        kwargs = {}
+        # Set figsize to get the same figure between default and passed figure
+        if style == "mosaic":
+            kwargs["figsize"] = [3.0, 12.0]
+        elif style != "heatmap":
+            kwargs["figsize"] = [6.0, 4.0]
         if fig:
-            fig = plt.figure()
-        if ax:
-            if fig:
-                ax = fig.add_subplot(111)
-            else:
-                ax = plt.figure().add_subplot(111)
+            fig = plt.figure(**kwargs)
+            if style == "heatmap":
+                # Not supported with this style, the error is tested elsewhere
+                fig = None
 
-        ax = hs.plot.plot_spectra(self.s, style=style, legend="auto", fig=fig, ax=ax)
+        ax = hs.plot.plot_spectra(self.s, style=style, legend="auto", fig=fig, **kwargs)
         if style == "mosaic":
             ax = ax[0]
         return ax.figure
 
-    @pytest.mark.parametrize(
-        ("style", "fig", "ax"), _generate_parameters(style), ids=_generate_ids(style)
-    )
+    @pytest.mark.parametrize(("style", "fig"), _generate_parameters(style))
     @pytest.mark.mpl_image_compare(
         baseline_dir=baseline_dir, tolerance=default_tol, style=style_pytest_mpl
     )
-    def test_plot_spectra_rev(self, style, fig, ax):
+    def test_plot_spectra_rev(self, style, fig):
+        kwargs = {}
+        if style == "mosaic":
+            kwargs["figsize"] = [3.0, 12.0]
+        elif style != "heatmap":
+            kwargs["figsize"] = [6.0, 4.0]
         if fig:
-            fig = plt.figure()
-        if ax:
-            fig = plt.figure()
-            ax = fig.add_subplot(111)
+            fig = plt.figure(**kwargs)
+            if style == "heatmap":
+                # Not supported with this style, the error is tested elsewhere
+                fig = None
 
         ax = hs.plot.plot_spectra(
-            self.s_reverse, style=style, legend="auto", fig=fig, ax=ax
+            self.s_reverse, style=style, legend="auto", fig=fig, **kwargs
         )
         if style == "mosaic":
             ax = ax[0]
@@ -431,8 +429,9 @@ def test_plot_add_line_events(ax):
     assert len(line.events.closed.connected) == 0
     assert len(s.axes_manager.events.indices_changed.connected) == 1
 
-    plot.close()
+    s._plot.close()
     assert len(s.axes_manager.events.indices_changed.connected) == 0
+    assert len(s._plot.events.closed.connected) == 0
     assert s._plot.signal_plot is None
 
 
@@ -469,6 +468,43 @@ def test_plot_spectra_linestyle_error():
         hs.plot.plot_spectra(s, linestyle="invalid")
 
 
+@pytest.mark.mpl_image_compare(
+    baseline_dir=baseline_dir, tolerance=default_tol, style=style_pytest_mpl
+)
+@pytest.mark.parametrize("style", ("overlap", "cascade", "mosaic", "heatmap"))
+def test_plot_spectra_normalise(style):
+    s = hs.signals.Signal1D(np.arange(100)) + 100
+    s2 = s * 1000
+
+    ax = hs.plot.plot_spectra([s, s2], style=style, normalise=True)
+    if style == "mosaic":
+        ax = ax[0]
+
+    return ax.get_figure()
+
+
+def test_plot_spectra_normalise_interactive():
+    s = hs.signals.Signal1D(np.arange(100)) + 100
+    s2 = np.sqrt(s)
+
+    ax = hs.plot.plot_spectra([s, s2], normalise=True)
+    lines = ax.get_lines()
+    assert lines[0].get_data()[1][0] == 0
+    assert lines[0].get_data()[1][-1] == 1
+    assert lines[1].get_data()[1][0] == 0
+    assert lines[1].get_data()[1][-1] == 1
+
+    # Simulate data changed
+    s.data = s.data * -1
+    s.events.data_changed.trigger(s)
+
+    # check the values
+    assert lines[0].get_data()[1][0] == 1
+    assert lines[0].get_data()[1][-1] == 0
+    assert lines[1].get_data()[1][0] == 0
+    assert lines[1].get_data()[1][-1] == 1
+
+
 def test_plot_empty_slice_autoscale():
     s = hs.signals.Signal1D(np.arange(100))
     s.plot()
@@ -483,3 +519,34 @@ def test_plot_empty_slice_autoscale():
     # change span selector to an "empty" slice and trigger update
     r.left = 23
     r.right = 23.1
+
+
+@pytest.mark.mpl_image_compare(
+    baseline_dir=baseline_dir, tolerance=default_tol, style=style_pytest_mpl
+)
+def test_plot_spectra_ax():
+    s = hs.signals.Signal1D(np.arange(10))
+    s.axes_manager[-1].name = ""
+    s.axes_manager[-1].units = ""
+    s2 = -s
+    s_stack = hs.stack([s, s2])
+
+    fig, ax = plt.subplots(ncols=5, nrows=1)
+    with pytest.raises(ValueError):
+        hs.plot.plot_spectra(s_stack, style="heatmap", ax=ax)
+    with pytest.raises(ValueError):
+        hs.plot.plot_spectra(s_stack, style="heatmap", fig=fig)
+
+    with pytest.raises(ValueError):
+        hs.plot.plot_spectra(s_stack, ax=ax)
+
+    hs.plot.plot_spectra(s_stack, ax=ax[1], style="overlap")
+    hs.plot.plot_spectra(s_stack, ax=ax[2], style="cascade", padding=1.5)
+    hs.plot.plot_spectra(s_stack, ax=ax[3:], style="mosaic")
+
+    ax[1].set_title("overlap")
+    ax[2].set_title("cascade")
+    ax[3].set_title("mosaic 0")
+    ax[4].set_title("mosaic 1")
+
+    return fig

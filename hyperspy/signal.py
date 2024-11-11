@@ -53,6 +53,7 @@ from hyperspy.docstrings.signal import (
     CLUSTER_SIGNALS_ARG,
     HISTOGRAM_BIN_ARGS,
     HISTOGRAM_MAX_BIN_ARGS,
+    HISTOGRAM_RANGE_ARGS,
     LAZY_OUTPUT_ARG,
     MANY_AXIS_PARAMETER,
     NAN_FUNC,
@@ -80,7 +81,7 @@ from hyperspy.io import assign_signal_subclass
 from hyperspy.io import save as io_save
 from hyperspy.learn.mva import MVA, LearningResults
 from hyperspy.misc.array_tools import rebin as array_rebin
-from hyperspy.misc.hist_tools import histogram
+from hyperspy.misc.hist_tools import _set_histogram_metadata, histogram
 from hyperspy.misc.math_tools import check_random_state, hann_window_nth_order, outer_nd
 from hyperspy.misc.signal_tools import are_signals_aligned, broadcast_signals
 from hyperspy.misc.slicing import FancySlicing, SpecialSlicers
@@ -88,6 +89,7 @@ from hyperspy.misc.utils import (
     DictionaryTreeBrowser,
     _get_block_pattern,
     add_scalar_axis,
+    dummy_context_manager,
     guess_output_signal_size,
     is_cupy_array,
     isiterable,
@@ -344,6 +346,18 @@ class ModelManager(object):
         """
         name = self._check_name(name, True)
         d = self._models.get_item(name + "._dict").as_dictionary()
+        for c in d["components"]:
+            # Restoring of polynomials saved with Hyperspy <v2.1.1 and >= 1.5
+            # the order initialisation argument was missing from the whitelist
+            # We patch the dictionary to be able to load these files
+            if (
+                c["_id_name"] == "Polynomial"
+                # make sure that this is not an old polynomial
+                and c["parameters"][0]["_id_name"] != "coefficients"
+                and "order" not in c.keys()
+            ):
+                c["_whitelist"]["order"] = "init"
+                c["order"] = len(c["parameters"]) - 1
         return self._signal.create_model(dictionary=copy.deepcopy(d))
 
     def __repr__(self):
@@ -3027,6 +3041,21 @@ class BaseSignal(
                 navigator = None
             else:
                 navigator = "slider"
+
+        from hyperspy.defaults_parser import preferences
+
+        if (
+            "fig" not in kwargs.keys()
+            and preferences.Plot.use_subfigure
+            and axes_manager.navigation_dimension > 0
+            and axes_manager.signal_dimension in [1, 2]
+        ):
+            # Create default subfigure
+            fig = plt.figure(figsize=(15, 7), layout="constrained")
+            subfigs = fig.subfigures(1, 2)
+            kwargs["fig"] = subfigs[1]
+            kwargs["navigator_kwds"] = dict(fig=subfigs[0])
+
         if axes_manager.signal_dimension == 0:
             if axes_manager.navigation_dimension == 0:
                 # 0d signal without navigation axis: don't make a figure
@@ -3400,17 +3429,21 @@ class BaseSignal(
             self.axes_manager.convert_units(axis)
 
     def interpolate_on_axis(self, new_axis, axis=0, inplace=False, degree=1):
-        """Replaces the given ``axis`` with the provided ``new_axis``
+        """
+        Replaces the given ``axis`` with the provided ``new_axis``
         and interpolates data accordingly using
         :func:`scipy.interpolate.make_interp_spline`.
 
         Parameters
         ----------
         new_axis : :class:`hyperspy.axes.UniformDataAxis`,
-        :class:`hyperspy.axes.DataAxis` or :class:`hyperspy.axes.FunctionalDataAxis`
+        :class:`hyperspy.axes.DataAxis`, :class:`hyperspy.axes.FunctionalDataAxis`
+        or str
             Axis which replaces the one specified by the ``axis`` argument.
             If this new axis exceeds the range of the old axis,
             a warning is raised that the data will be extrapolated.
+            If ``"uniform"``, convert the axis specified by the ``axis``
+            parameter to a uniform axis with the same number of data points.
         axis : int or str, default 0
             Specifies the axis which will be replaced using the index of the
             axis in the `axes_manager`. The axis can be specified using the index of the
@@ -3427,28 +3460,63 @@ class BaseSignal(
         :class:`~.api.signals.BaseSignal` (or subclass)
             A copy of the object with the axis exchanged and the data interpolated.
             This only occurs when inplace is set to ``False``, otherwise nothing is returned.
+
+        Examples
+        --------
+        >>> s = hs.data.luminescence_signal(uniform=False)
+        >>> s2 = s.interpolate_on_axis("uniform", -1, inplace=False)
+        >>> hs.plot.plot_spectra(
+        ...     [s, s2],
+        ...     legend=["FunctionalAxis", "Interpolated"],
+        ...     drawstyle='steps-mid',
+        ... )
+        <Axes: xlabel='Energy (eV)', ylabel='Intensity'>
+
+        Specifying a uniform axis:
+
+        >>> s = hs.data.luminescence_signal(uniform=False)
+        >>> new_axis = s.axes_manager[-1].copy()
+        >>> new_axis.convert_to_uniform_axis()
+        >>> s3 = s.interpolate_on_axis(new_axis, -1, inplace=False)
+        >>> hs.plot.plot_spectra(
+        ...     [s, s3],
+        ...     legend=["FunctionalAxis", "Interpolated"],
+        ...     drawstyle='steps-mid',
+        ... )
+        <Axes: xlabel='Energy (eV)', ylabel='Intensity'>
         """
         old_axis = self.axes_manager[axis]
-        if old_axis.navigate != new_axis.navigate:
-            raise ValueError(
-                "The navigate attribute of new_axis differs from the to be replaced axis."
-            )
         axis_idx = old_axis.index_in_array
-        if (
-            old_axis.low_value > new_axis.low_value
-            or old_axis.high_value < new_axis.high_value
-        ):
-            _logger.warning(
-                "The specified new axis exceeds the range of the to be replaced old axis. "
-                "The data will be extrapolated if not specified otherwise via fill_value/bounds_error"
-            )
-
         interpolator = make_interp_spline(
             old_axis.axis,
             self.data,
             axis=axis_idx,
             k=degree,
         )
+
+        if new_axis == "uniform":
+            if old_axis.is_uniform:
+                raise ValueError(f"The axis {old_axis.name} is already uniform.")
+            if inplace:
+                old_axis.convert_to_uniform_axis(log_scale_error=False)
+                new_axis = old_axis
+            else:
+                new_axis = old_axis.copy()
+                new_axis.convert_to_uniform_axis(log_scale_error=False)
+        else:
+            if old_axis.navigate != new_axis.navigate:
+                raise ValueError(
+                    "The navigate attribute of new_axis differs from the to be replaced axis."
+                )
+            if (
+                old_axis.low_value > new_axis.low_value
+                or old_axis.high_value < new_axis.high_value
+            ):
+                _logger.warning(
+                    "The specified new axis exceeds the range of the to be replaced old axis. "
+                    "The data will be extrapolated if not specified otherwise via fill_value/bounds_error"
+                )
+
         new_data = interpolator(new_axis.axis)
 
         if inplace:
@@ -3457,7 +3525,10 @@ class BaseSignal(
         else:
             s = self._deepcopy_with_new_data(new_data)
 
-        s.axes_manager.set_axis(new_axis, axis_idx)
+        if new_axis is not old_axis:
+            # user specifies a new_axis != "uniform"
+            s.axes_manager.set_axis(new_axis, axis_idx)
+
         if not inplace:
             return s
 
@@ -3575,10 +3646,14 @@ class BaseSignal(
         elif new_shape:
             if len(new_shape) != len(self.data.shape):
                 raise ValueError("Wrong new_shape size")
-            for axis in self.axes_manager._axes:
-                if axis.is_uniform is False:
+            for i, axis in enumerate(self.axes_manager._axes):
+                # If the shape doesn't change, there is nothing to do
+                # and we don't need to raise an error
+                if axis.is_uniform is False and new_shape[i] != self.data.shape[i]:
                     raise NotImplementedError(
-                        "Rebinning of non-uniform axes is not yet implemented."
+                        "Rebinning of non-uniform axes is not yet implemented. "
+                        "An alternative is to interpolate the data on an uniform axis "
+                        "using `interpolate_on_axis` before rebinning."
                     )
             new_shape_in_array = np.array(
                 [
@@ -3590,8 +3665,8 @@ class BaseSignal(
         else:
             if len(scale) != len(self.data.shape):
                 raise ValueError("Wrong scale size")
-            for axis in self.axes_manager._axes:
-                if axis.is_uniform is False:
+            for i, axis in enumerate(self.axes_manager._axes):
+                if axis.is_uniform is False and scale[i] != 1:
                     raise NotImplementedError(
                         "Rebinning of non-uniform axes is not yet implemented."
                     )
@@ -3684,8 +3759,10 @@ class BaseSignal(
         s.get_dimensions_from_data()
         for axis, axis_src in zip(s.axes_manager._axes, self.axes_manager._axes):
             factor = factors[axis.index_in_array]
-            axis.scale = axis_src.scale * factor
-            axis.offset = axis_src.offset + (factor - 1) * axis_src.scale / 2
+            if factor != 1:
+                # Change scale, offset only when necessary
+                axis.scale = axis_src.scale * factor
+                axis.offset = axis_src.offset + (factor - 1) * axis_src.scale / 2
         if s.metadata.has_item("Signal.Noise_properties.variance"):
             if isinstance(s.metadata.Signal.Noise_properties.variance, BaseSignal):
                 var = s.metadata.Signal.Noise_properties.variance
@@ -5090,9 +5167,7 @@ class BaseSignal(
         Parameters
         ----------
         %s
-        range_bins : tuple or None, optional
-            the minimum and maximum range for the histogram. If
-            `range_bins` is ``None``, (``x.min()``, ``x.max()``) will be used.
+        %s
         %s
         %s
         %s
@@ -5104,6 +5179,11 @@ class BaseSignal(
         -------
         hist_spec : :class:`~.api.signals.Signal1D`
             A 1D spectrum instance containing the histogram.
+
+        Notes
+        -----
+        See :func:`numpy.histogram` for more details on the
+        meaning of the returned values.
 
         See Also
         --------
@@ -5149,9 +5229,8 @@ class BaseSignal(
             hist_spec.axes_manager[0].offset = bin_edges[0]
             hist_spec.axes_manager[0].size = hist.shape[-1]
 
-        hist_spec.axes_manager[0].name = "value"
-        hist_spec.axes_manager[0].is_binned = True
-        hist_spec.metadata.General.title = self.metadata.General.title + " histogram"
+        _set_histogram_metadata(self, hist_spec, **kwargs)
+
         if out is None:
             return hist_spec
         else:
@@ -5159,6 +5238,7 @@ class BaseSignal(
 
     get_histogram.__doc__ %= (
         HISTOGRAM_BIN_ARGS,
+        HISTOGRAM_RANGE_ARGS,
         HISTOGRAM_MAX_BIN_ARGS,
         OUT_ARG,
         RECHUNK_ARG,
@@ -5175,6 +5255,7 @@ class BaseSignal(
         output_signal_size=None,
         output_dtype=None,
         lazy_output=None,
+        silence_warnings=False,
         **kwargs,
     ):
         """Apply a function to the signal data at all the navigation
@@ -5231,6 +5312,14 @@ class BaseSignal(
             See docstring for output_signal_size for more information.
             Default None.
         %s
+        silence_warnings : bool, str or tuple, list of str
+            If ``True``, don't warn when one of the signal axes are non-uniform,
+            or the scales of the signal axes differ. If ``"non-uniform"``,
+            ``"scales"`` or ``"units"`` are in the list the warning will be
+            silenced when using non-uniform axis, different scales or different
+            units of the signal axes, respectively.
+            If ``False``, all warnings will be added to the logger.
+            Default is ``False``.
         **kwargs : dict
             All extra keyword arguments are passed to the provided function
 
@@ -5305,6 +5394,30 @@ class BaseSignal(
             lazy_output = self._lazy
         if ragged is None:
             ragged = self.ragged
+        if isinstance(silence_warnings, str):
+            silence_warnings = (silence_warnings,)
+
+        if isinstance(silence_warnings, (list, tuple)):
+            for key in silence_warnings:
+                if isinstance(key, str):
+                    if key not in ["non-uniform", "units", "scales"]:
+                        raise ValueError(
+                            f"'{key}' is not a valid string for the "
+                            "`silence_warnings` parameter."
+                        )
+                else:
+                    raise TypeError(
+                        "`silence_warnings` must be a boolean or a list, tuple of string."
+                    )
+
+        def _silence_warnings(silence_warnings, key):
+            # Return True when it should silence warning,
+            # otherwise False
+            # Warn only when `silence_warnings` is False
+            # or when the key is not in `silence_warnings`
+            return silence_warnings is True or (
+                isinstance(silence_warnings, (tuple, list)) and key in silence_warnings
+            )
 
         # Separate arguments to pass to the mapping function:
         # ndkwargs dictionary contains iterating arguments which must be signals.
@@ -5326,12 +5439,12 @@ class BaseSignal(
                     f"with the size of the mapped signal "
                     f"<{self_nav_shape}>"
                 )
-        # TODO: Consider support for non-uniform signal axis
         if any([not ax.is_uniform for ax in self.axes_manager.signal_axes]):
-            _logger.warning(
-                "At least one axis of the signal is non-uniform. Can your "
-                "`function` operate on non-uniform axes?"
-            )
+            if not _silence_warnings(silence_warnings, "non-uniform"):
+                _logger.warning(
+                    "At least one axis of the signal is non-uniform. Can your "
+                    "`function` operate on non-uniform axes?",
+                )
         else:
             # Check if the signal axes have inhomogeneous scales and/or units and
             # display in warning if yes.
@@ -5340,10 +5453,15 @@ class BaseSignal(
             for i in range(len(self.axes_manager.signal_axes)):
                 scale.add(self.axes_manager.signal_axes[i].scale)
                 units.add(self.axes_manager.signal_axes[i].units)
-            if len(units) != 1 or len(scale) != 1:
+            if len(scale) != 1 and not _silence_warnings(silence_warnings, "scales"):
                 _logger.warning(
                     "The function you applied does not take into account "
-                    "the difference of units and of scales in-between axes."
+                    "the difference of scales in-between axes."
+                )
+            if len(units) != 1 and not _silence_warnings(silence_warnings, "units"):
+                _logger.warning(
+                    "The function you applied does not take into account "
+                    "the difference of units in-between axes."
                 )
         # If the function has an axis argument and the signal dimension is 1,
         # we suppose that it can operate on the full array and we don't
@@ -5521,10 +5639,6 @@ class BaseSignal(
 
         axes_changed = len(new_axis) != 0 or len(adjust_chunks) != 0
 
-        if show_progressbar:
-            pbar = ProgressBar()
-            pbar.register()
-
         mapped = da.blockwise(
             process_function_blockwise,
             output_pattern,
@@ -5544,6 +5658,8 @@ class BaseSignal(
 
         data_stored = False
 
+        cm = ProgressBar if show_progressbar else dummy_context_manager
+
         if inplace:
             if (
                 not self._lazy
@@ -5554,13 +5670,15 @@ class BaseSignal(
                 # da.store is used to avoid unnecessary amount of memory usage.
                 # By using it here, the contents in mapped is written directly to
                 # the existing NumPy array, avoiding a potential doubling of memory use.
-                da.store(
-                    mapped,
-                    self.data,
-                    dtype=mapped.dtype,
-                    compute=True,
-                    num_workers=num_workers,
-                )
+                with cm():
+                    da.store(
+                        mapped,
+                        self.data,
+                        dtype=mapped.dtype,
+                        compute=True,
+                        num_workers=num_workers,
+                        lock=False,
+                    )
                 data_stored = True
             else:
                 self.data = mapped
@@ -5588,10 +5706,8 @@ class BaseSignal(
         sig._assign_subclass()
 
         if not lazy_output and not data_stored:
-            sig.data = sig.data.compute(num_workers=num_workers)
-
-        if show_progressbar:
-            pbar.unregister()
+            with cm():
+                sig.data = sig.data.compute(num_workers=num_workers)
 
         return sig
 
@@ -6264,13 +6380,16 @@ class BaseSignal(
         :class:`~.api.signals.BaseSignal` subclass associated, usually
         providing specific features for the analysis of that type of signal.
 
-        HyperSpy ships with a minimal set of known signal types. External
-        packages can register extra signal types. To print a list of
+        HyperSpy ships only with generic signal types. External packages
+        can register domain-specific signal types, usually associated with
+        specific measurement techniques. To print a list of
         registered signal types in the current installation, call
         :func:`~.api.print_known_signal_types`, and see
         the developer guide for details on how to add new signal_types.
-        A non-exhaustive list of HyperSpy extensions is also maintained
-        here: https://github.com/hyperspy/hyperspy-extensions-list.
+        A non-exhaustive list of HyperSpy extensions is maintained
+        here: https://github.com/hyperspy/hyperspy-extensions-list. See also the
+        `HyperSpy Website <https://hyperspy.org>`_ for an overview of the
+        ecosystem.
 
         Parameters
         ----------
@@ -6291,7 +6410,9 @@ class BaseSignal(
         Examples
         --------
 
-        Let's first print all known signal types:
+        Let's first print all known signal types (assuming the extensions
+        `eXSpy <https://hyperspy.org/exspy>`_ and `holoSpy
+        <https://hyperspy.org/holospy>`_ are installed):
 
         >>> s = hs.signals.Signal1D([0, 1, 2, 3])
         >>> s

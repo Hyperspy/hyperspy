@@ -30,7 +30,7 @@ from hyperspy.events import Event, Events
 class WidgetBase(object):
     """Base class for interactive widgets/patches. A widget creates and
     maintains one or more matplotlib patches, and manages the interaction code
-    so that the user can maniuplate it on the fly.
+    so that the user can manipulate it on the fly.
 
     This base class implements functionality which is common to all such
     widgets, mainly the code that manages the patch, axes management, and
@@ -614,6 +614,11 @@ class ResizableDraggableWidgetBase(DraggableWidgetBase):
         return value
 
     def _set_snap_size(self, value):
+        if value and any(not axis.is_uniform for axis in self.axes):
+            raise ValueError(
+                "The snap to axes values feature is not supported "
+                "for non-uniform axes."
+            )
         self._snap_size = value
         if value:
             snap_value = self._do_snap_size(self._size)
@@ -966,7 +971,7 @@ class ResizersMixin:
             self._resizer_handles.append(r)
 
     def set_on(self, value):
-        """Turns on/off resizers whet widget is turned on/off."""
+        """Turns on/off resizers when widget is turned on/off."""
         if self.resizers and value != self._resizers_on:
             self._set_resizers(value, self.ax)
         if hasattr(super(ResizersMixin, self), "set_on"):
