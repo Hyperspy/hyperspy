@@ -306,7 +306,7 @@ Install the runtime requirements using conda:
 
 .. code-block:: bash
 
-    $ conda install hyperspy-base -c conda-forge --only-deps # install hyperspy dependencies
+    $ conda env update -f conda_environment.yml # install hyperspy dependencies
 
 From the root folder of your hyperspy repository (folder containing the
 ``setup.py`` file) run `pip <https://pip.pypa.io/>`_ in development mode:
