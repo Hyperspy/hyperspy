@@ -296,9 +296,6 @@ Installation in a Anaconda/Miniconda distribution
 Optionally, create an environment to separate your hyperspy installation from
 other anaconda environments (`read more about environments here
 <https://conda.io/projects/conda/en/latest/user-guide/concepts/environments.html>`_).
-At this point, it is helpful to let conda pick compatible ``python`` and 
-``hyperspy-dev`` versions. ``hyperspy-dev`` contains development 
-dependencies required for testing and building documentation. 
 
 .. code-block:: bash
 
