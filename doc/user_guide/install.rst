@@ -299,7 +299,7 @@ other anaconda environments (`read more about environments here
 
 .. code-block:: bash
 
-    $ conda create -n hspy_dev python hyperspy-dev -c conda-forge # create an env with compatible hyperspy-dev and python versions
+    $ conda env create -f conda_environment_dev.yml # create an env with development dependencies
     $ conda activate hspy_dev # activate environment
 
 Install the runtime requirements using conda:
