@@ -38,7 +38,7 @@ dependencies = [
     "rosettasciio[hdf5]",
     "scikit-image>=0.18",
     "scipy>=1.6.0",
-    "sympy>=1.6",
+    "sympy>=1.10",
     "tqdm>=4.9.0",
     "traits>=4.5.0",
 ]
@@ -141,7 +141,7 @@ learning = [
 ]
 speed = [
     "numba>=0.53",
-    "numexpr",
+    "numexpr>=2.8",
 ]
 tests = [
     "pytest-instafail",
