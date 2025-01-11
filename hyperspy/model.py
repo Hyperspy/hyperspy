@@ -26,10 +26,12 @@ from contextlib import contextmanager
 from functools import partial
 
 import cloudpickle
+import dask
 import dask.array as da
 import numpy as np
 import scipy.odr as odr
 from dask.diagnostics import ProgressBar
+from packaging.version import Version
 from scipy.linalg import svd
 from scipy.optimize import (
     OptimizeResult,
@@ -49,6 +51,7 @@ from hyperspy.exceptions import VisibleDeprecationWarning
 from hyperspy.extensions import ALL_EXTENSIONS
 from hyperspy.external.mpfit.mpfit import mpfit
 from hyperspy.external.progressbar import progressbar
+from hyperspy.io import assign_signal_subclass
 from hyperspy.misc.export_dictionary import (
     export_to_dictionary,
     load_from_dictionary,
@@ -163,6 +166,173 @@ def reconstruct_component(comp_dictionary, **init_args):
             + f'{comp_dictionary["package"]} is not installed.'
         )
     return _class(**init_args)
+
+
+def _get_model_data_function_nd(
+    model,
+    component_list,
+    out_of_range_to_nan,
+    nav_slices=None,
+    sig_slices=None,
+    shape=None,
+):
+    signal_axis = model.axes_manager[-1]
+    if nav_slices is None:
+        nav_slices = tuple([slice(None)] * model.axes_manager.navigation_dimension)
+    if shape is None:
+        shape = model.signal.data.shape
+
+    data_ = np.zeros(shape, dtype=float)
+    for component in component_list:
+        # TODO: check if the binning scale factor / add tests
+        # TODO: check order axis / add tests
+        axis_ = model.axes_manager["sig"].get("axis")["axis"]
+        if len(axis_) >= 2:
+            axis_ = np.meshgrid(*axis_)
+        data_ += component.function_nd(
+            *axis_,
+            parameters_values=[
+                p.map["values"][nav_slices] for p in component.parameters
+            ],
+        )
+
+        if signal_axis.is_binned:
+            if signal_axis.is_uniform:
+                scale_factor = signal_axis.scale
+            else:
+                scale_factor = np.gradient(signal_axis.axis)
+        else:
+            scale_factor = 1
+        data_ *= scale_factor
+
+    if out_of_range_to_nan:
+        if sig_slices is None:
+            sig_slices = tuple([slice(None)] * model.axes_manager.signal_dimension)
+        # TODO: check if this works with Model2D
+        data_[..., np.invert(model._channel_switches[sig_slices])] = np.nan
+
+    return data_
+
+
+def _get_model_data_chunk(
+    model,
+    component_list=None,
+    out_of_range_to_nan=True,
+    block_info=None,
+):
+    """
+    Compute the model data for a give chunk
+
+    Parameters
+    ----------
+    model : hyperspy.model.BaseModel
+        The model used to calculate the data.
+    component_list : list, tuple of hyperspy.component.Component or None, optional
+        The list of components used to calculate the model. If None, all
+        components of the model are used. The default is None.
+    block_info : dict or None
+        Passed by dask to provide the chunk location and shape.
+
+    Returns
+    -------
+    model_data : numpy.ndarray
+        The calculated model data for the given chunk and components.
+
+    """
+    """Get a chunk of calculate model data"""
+    if component_list is None:
+        component_list = model
+
+    chunk_slice = block_info[None]["array-location"]
+    chunk_shape = block_info[None]["chunk-shape"]
+    nav_slices = tuple(
+        [
+            slice(*slice_)
+            for slice_ in chunk_slice[: model.axes_manager.navigation_dimension]
+        ]
+    )
+    sig_slices = tuple(
+        [
+            slice(*slice_)
+            for slice_ in chunk_slice[model.axes_manager.navigation_dimension :]
+        ]
+    )
+
+    return _get_model_data_function_nd(
+        model, component_list, out_of_range_to_nan, nav_slices, sig_slices, chunk_shape
+    )
+
+
+def get_chunk_slice(
+    shape,
+    signal_dimension,
+    chunks="auto",
+    block_size_limit=None,
+    dtype=None,
+):
+    if chunks == "auto":
+        # no chunking along signal_dimension
+        chunks = ("auto",) * len(shape[:-signal_dimension]) + (-1,)
+    elif chunks == "dask_auto":
+        # Use dask auto
+        chunks = "auto"
+
+    chunks = da.core.normalize_chunks(
+        chunks=chunks, shape=shape, limit=block_size_limit, dtype=dtype
+    )
+    chunks_shape = tuple([len(c) for c in chunks])
+    slices = np.empty(
+        shape=chunks_shape + (len(chunks_shape), 2),
+        dtype=int,
+    )
+    for ind in np.ndindex(chunks_shape):
+        current_chunk = [chunk[i] for i, chunk in zip(ind, chunks)]
+        starts = [int(np.sum(chunk[:i])) for i, chunk in zip(ind, chunks)]
+        stops = [s + c for s, c in zip(starts, current_chunk)]
+        slices[ind] = [[start, stop] for start, stop in zip(starts, stops)]
+
+    return slices, chunks
+
+
+def _model_as_signal_lazy_data(
+    model,
+    component_list=None,
+    chunks="auto",
+    block_size_limit=None,
+):
+    """
+    Returns a chunk of model data.
+
+    Parameters
+    ----------
+    model : hyperspy.model.BaseModel
+        The model used to create the signal data.
+    component_list : list, tuple of hyperspy.component.Component or None, optional
+        The list of components used to calculate the model. If None, all
+        components of the model are used. The default is None.
+
+    Returns
+    -------
+    data : dask array
+        The calculated model data
+    """
+    _, data_chunks = get_chunk_slice(
+        shape=model.signal.data.shape,
+        chunks=chunks,
+        signal_dimension=model.axes_manager.signal_dimension,
+        block_size_limit=block_size_limit,
+        dtype=float,
+    )
+
+    data = da.map_blocks(
+        _get_model_data_chunk,
+        model,
+        component_list=component_list,
+        dtype=float,
+        chunks=data_chunks,
+        meta=np.array((), dtype=float),
+    )
+    return data
 
 
 class ModelComponents(object):
@@ -594,6 +764,9 @@ class BaseModel(list):
         out_of_range_to_nan=True,
         show_progressbar=None,
         out=None,
+        lazy_output=None,
+        chunks="auto",
+        block_size_limit=None,
         **kwargs,
     ):
         """Returns a recreation of the dataset using the model.
@@ -635,19 +808,96 @@ class BaseModel(list):
         if show_progressbar is None:
             show_progressbar = preferences.General.show_progressbar
 
-        if out is None:
-            data = np.empty(self.signal.data.shape, dtype="float")
-            data.fill(np.nan)
-            signal = self.signal.__class__(
-                data, axes=self.signal.axes_manager._get_axes_dicts()
+        if component_list is None:
+            component_list = self.active_components
+        else:
+            component_list = [self._get_component(c) for c in component_list]
+            component_list = [c for c in component_list if c.active]
+
+        if lazy_output is None:
+            lazy_output = self.signal._lazy
+
+        missing_function_nd = not all(
+            [hasattr(c, "function_nd") for c in component_list]
+        )
+
+        # Get data array
+        if not lazy_output and not missing_function_nd:
+            # Fast code path to create the data using vectorised function_nd non-lazily
+            data_ = _get_model_data_function_nd(
+                self, component_list, out_of_range_to_nan
             )
-            signal.set_signal_type(signal.metadata.Signal.signal_type)
-            signal.metadata.General.title = (
+        else:
+            if missing_function_nd:
+                # Old slow code path iterating over indices
+                # we need to keep this code path to support components without
+                # function_nd implementation, for example when loading old models
+                # lazy signal not supported with this code path
+                if lazy_output:
+                    name = ", ".join(
+                        [
+                            c.name
+                            for c in component_list
+                            if not hasattr(c, "function_nd")
+                        ]
+                    )
+                    raise RuntimeError(
+                        "Getting the signal lazily is not supported because the "
+                        f"components ({name}) don't implement the `function_nd` method."
+                    )
+                else:
+                    data_ = self._as_signal_iter(
+                        component_list=component_list,
+                        show_progressbar=show_progressbar,
+                        out_of_range_to_nan=out_of_range_to_nan,
+                    )
+            else:
+                if Version(dask.__version__) >= Version("2024.12.0"):
+                    # lazy output using vectorized function_nd
+                    # This code path doesn't support dask < 2024.12.0:
+                    # the model object can't be passed through to _get_model_data_chunk
+                    data_ = _model_as_signal_lazy_data(
+                        self, component_list, chunks, block_size_limit
+                    )
+                else:
+                    # Old slow code path
+                    data_ = self._as_signal_iter(
+                        component_list=component_list,
+                        show_progressbar=show_progressbar,
+                        out_of_range_to_nan=out_of_range_to_nan,
+                    )
+
+        # Create signal when out is not provided, otherwise set out.data array
+        if out is None:
+            signal_class = assign_signal_subclass(
+                dtype=self.signal.data.dtype,
+                signal_dimension=self.signal.axes_manager.signal_dimension,
+                signal_type=self.signal.metadata.Signal.signal_type,
+                lazy=lazy_output,
+            )
+            signal_ = signal_class(
+                data_, axes=self.signal.axes_manager._get_axes_dicts()
+            )
+            signal_.metadata.General.title = (
                 self.signal.metadata.General.title + " from fitted model"
             )
         else:
-            signal = out
-            data = signal.data
+            out.data = data_
+
+        if out is None:
+            return signal_
+
+    as_signal.__doc__ %= SHOW_PROGRESSBAR_ARG
+
+    def _as_signal_iter(
+        self, component_list=None, show_progressbar=None, out_of_range_to_nan=True
+    ):
+        # Note: old slow code path which doesn't support lazy processing
+        # Note that show_progressbar can be an int to determine the progressbar
+        # position for a thread-friendly bars. Otherwise race conditions are
+        # ugly...
+        if show_progressbar is None:  # pragma: no cover
+            show_progressbar = preferences.General.show_progressbar
 
         if not out_of_range_to_nan:
             # we want the full signal range, including outside the fitted
@@ -655,26 +905,7 @@ class BaseModel(list):
             channel_switches_backup = copy.copy(self._channel_switches)
             self._channel_switches[:] = True
 
-        self._as_signal_iter(
-            component_list=component_list, show_progressbar=show_progressbar, data=data
-        )
-
-        if not out_of_range_to_nan:
-            # Restore the _channel_switches, previously set
-            self._channel_switches[:] = channel_switches_backup
-
-        return signal
-
-    as_signal.__doc__ %= SHOW_PROGRESSBAR_ARG
-
-    def _as_signal_iter(self, data, component_list=None, show_progressbar=None):
-        # BUG: with lazy signal returns lazy signal with numpy array
-        # Note that show_progressbar can be an int to determine the progressbar
-        # position for a thread-friendly bars. Otherwise race conditions are
-        # ugly...
-        if show_progressbar is None:  # pragma: no cover
-            show_progressbar = preferences.General.show_progressbar
-
+        data_ = np.full_like(self.signal.data, np.nan)
         with stash_active_state(self if component_list else []):
             if component_list:
                 component_list = [self._get_component(x) for x in component_list]
@@ -694,10 +925,16 @@ class BaseModel(list):
             )
             for index in self.axes_manager:
                 self.fetch_stored_values(only_fixed=False)
-                data[self.axes_manager._getitem_tuple][
+                data_[self.axes_manager._getitem_tuple][
                     np.where(self._channel_switches)
                 ] = self._get_current_data(onlyactive=True).ravel()
                 pbar.update(1)
+
+        if not out_of_range_to_nan:
+            # Restore the _channel_switches, previously set
+            self._channel_switches[:] = channel_switches_backup
+
+        return data_
 
     @property
     def _plot_active(self):
