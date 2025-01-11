@@ -352,8 +352,25 @@ class Expression(Component):
                     "The gradients can not be computed with sympy.", UserWarning
                 )
 
-    def function_nd(self, *args):
-        """%s"""
+    def function_nd(self, *args, parameters_values=None):
+        """
+        Calculate the component over given axes and with given parameter values.
+
+        Parameters
+        ----------
+        *args : numpy.ndarray
+            The axes onto which the component is calculated.
+            For 1D component, only a single array of dimension 1 is necessary.
+            For 2D component, two arrays of dimension 1 are necessary.
+        %s
+
+        Returns
+        -------
+        numpy.ndarray : the component values
+        """
+        if parameters_values is None:
+            parameters_values = [p.map["values"] for p in self.parameters]
+
         if self._is2D:
             x, y = args[0], args[1]
             # navigation dimension is 0, f_nd same as f
@@ -363,10 +380,7 @@ class Expression(Component):
                 return self._f(
                     x[np.newaxis, ...],
                     y[np.newaxis, ...],
-                    *[
-                        p.map["values"][..., np.newaxis, np.newaxis]
-                        for p in self.parameters
-                    ],
+                    *[p[..., np.newaxis, np.newaxis] for p in self.parameters],
                 )
         else:
             x = args[0]
@@ -375,7 +389,7 @@ class Expression(Component):
             else:
                 return self._f(
                     x[np.newaxis, ...],
-                    *[p.map["values"][..., np.newaxis] for p in self.parameters],
+                    *[p[..., np.newaxis] for p in parameters_values],
                 )
 
     function_nd.__doc__ %= FUNCTION_ND_DOCSTRING
