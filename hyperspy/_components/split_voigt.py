@@ -216,6 +216,7 @@ class SplitVoigt(Component):
             self.sigma2.map["is_set"][:] = True
             self.centre.map["values"][:] = centre
             self.centre.map["is_set"][:] = True
+            self.fraction.map["is_set"][:] = True
             self.fetch_stored_values()
             return True
 

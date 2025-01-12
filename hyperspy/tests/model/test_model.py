@@ -720,6 +720,18 @@ class TestAsSignal:
                 _ = m.as_signal(out_of_range_to_nan=False)
             assert "don't implement the `function_nd`" in caplog.text
 
+    def test_value_unset(self):
+        s = self.m.signal
+        m = s.create_model()
+        m.append(hs.model.components1D.Offset())
+        with pytest.raises(ValueError):
+            # the value are not set
+            m.as_signal()
+
+        m.set_parameters_value("offset", 1)
+        out = m.as_signal()
+        np.testing.assert_allclose(out.data, np.ones_like(out.data))
+
 
 @lazifyTestClass
 class TestCreateModel:

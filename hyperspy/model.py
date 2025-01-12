@@ -178,7 +178,7 @@ def _get_model_data_function_nd(
     shape=None,
 ):
     """
-    Compute the model data in a vectorised manner
+    Compute the model data in a vectorised manner.
 
     Parameters
     ----------
@@ -205,6 +205,14 @@ def _get_model_data_function_nd(
 
     data_ = np.zeros(shape, dtype=float)
     for component in component_list:
+        for p in component.parameters:
+            if not p.map["is_set"][nav_slices].all():
+                raise ValueError(
+                    f"The parameter {p.name} of the component {component.name} "
+                    "has unset values. Set the values by using the `multifit` or "
+                    "the `set_parameters_value` methods."
+                )
+
         axis_ = model.axes_manager["sig"].get("axis")["axis"]
         if len(axis_) >= 2:
             axis_ = np.meshgrid(*axis_)

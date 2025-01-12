@@ -83,8 +83,8 @@ class TestMultiFitLinear:
         m.fit(optimizer="lstsq")
         # Use out_of_range_to_nan=False to test lazily
         # with dask version < 2024.12.0
-        single = m.as_signal(out_of_range_to_nan=False)
         m.assign_current_values_to_all()
+        single = m.as_signal(out_of_range_to_nan=False)
         cm = (
             pytest.warns(UserWarning)
             if weighted and not self.s._lazy
@@ -140,8 +140,8 @@ class TestMultiFitLinear:
         m.fit(optimizer="lstsq")
         # Use out_of_range_to_nan=False to test lazily
         # with dask version < 2024.12.0
-        single = m.as_signal(out_of_range_to_nan=False)
         m.assign_current_values_to_all()
+        single = m.as_signal(out_of_range_to_nan=False)
         cm = (
             pytest.warns(UserWarning)
             if weighted and not self.s._lazy
@@ -168,8 +168,8 @@ class TestMultiFitLinear:
         m.append(L)
 
         m.fit(optimizer="lstsq")
-        single = m.as_signal()
         m.assign_current_values_to_all()
+        single = m.as_signal()
         cm = (
             pytest.warns(UserWarning)
             if weighted and not self.s._lazy
@@ -771,6 +771,7 @@ def test_power_law():
     pl_ref.A.value = 100
     pl_ref.r.value = 4
 
+    m_ref.assign_current_values_to_all()
     s = m_ref.as_signal()
 
     m = s.create_model()
@@ -800,6 +801,7 @@ def test_lorentzian():
     l_ref.A.value = 100
     l_ref.centre.value = 15
 
+    m_ref.assign_current_values_to_all()
     s = m_ref.as_signal()
 
     m = s.create_model()
@@ -828,6 +830,7 @@ def test_expression_multiple_linear_parameter(nav_dim):
 
     m_ref = s_ref.create_model()
     m_ref.extend([p_ref])
+    m_ref.assign_current_values_to_all()
     s = m_ref.as_signal()
 
     if nav_dim >= 1:
@@ -859,6 +862,7 @@ def test_fitter(optimizer):
 
     m_ref = s_ref.create_model()
     m_ref.extend([p_ref])
+    m_ref.assign_current_values_to_all()
     s = m_ref.as_signal()
 
     m = s.create_model()

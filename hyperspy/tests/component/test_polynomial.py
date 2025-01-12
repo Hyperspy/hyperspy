@@ -72,6 +72,7 @@ class TestPolynomial:
     @pytest.mark.parametrize(("only_current", "binned"), TRUE_FALSE_2_TUPLE)
     def test_estimate_parameters(self, only_current, binned, uniform, order, mapnone):
         self.m.signal.axes_manager[-1].is_binned = binned
+        self.m.assign_current_values_to_all()
         s = self.m.as_signal()
         s.axes_manager[-1].is_binned = binned
         if not uniform:
@@ -94,6 +95,7 @@ class TestPolynomial:
     def test_2d_signal(self):
         for p in self.m_2d[0].parameters:
             p.map["values"] = p.value
+            p.map["is_set"] = True
         s = self.m_2d.as_signal()
 
         model = s.create_model()
@@ -107,6 +109,7 @@ class TestPolynomial:
     def test_3d_signal(self):
         for p in self.m_3d[0].parameters:
             p.map["values"] = p.value
+            p.map["is_set"] = True
         s = self.m_3d.as_signal()
 
         model = s.create_model()
@@ -118,6 +121,7 @@ class TestPolynomial:
         np.testing.assert_allclose(p.a0.map["values"], 3)
 
     def test_function_nd(self):
+        self.m.assign_current_values_to_all()
         s = self.m.as_signal()
         s = hs.stack([s] * 2)
         p = hs.model.components1D.Polynomial(order=2)
