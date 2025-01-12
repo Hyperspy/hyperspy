@@ -607,54 +607,51 @@ def test_fetch_values_from_arrays():
 class TestAsSignal:
     def setup_method(self, method):
         self.m = hs.signals.Signal1D(np.arange(20).reshape(2, 2, 5)).create_model()
-        self.comps = [hs.model.components1D.Offset(), hs.model.components1D.Offset()]
-        self.m.extend(self.comps)
-        for c in self.comps:
-            c.offset.value = 2
+        self.m.extend([hs.model.components1D.Offset(), hs.model.components1D.Offset()])
+        for c, value in zip(self.m, (2, 3)):
+            c.offset.value = value
+
         self.m.assign_current_values_to_all()
 
     def test_all_components_simple(self):
         s = self.m.as_signal()
-        assert np.all(s.data == 4.0)
+        np.testing.assert_allclose(s.data, 5.0)
 
     def test_one_component_simple(self):
         s = self.m.as_signal(component_list=[0])
-        assert np.all(s.data == 2.0)
+        np.testing.assert_allclose(s.data, 2.0)
         assert self.m[1].active
 
     def test_all_components_multidim(self):
         self.m[0].active_is_multidimensional = True
 
         s = self.m.as_signal()
-        assert np.all(s.data == 4.0)
+        np.testing.assert_allclose(s.data, 5.0)
 
         self.m[0]._active_array[0] = False
         s = self.m.as_signal()
-        np.testing.assert_array_equal(
-            s.data, np.array([np.ones((2, 5)) * 2, np.ones((2, 5)) * 4])
-        )
+        np.testing.assert_allclose(s.data, np.ones((2, 2, 5)) * 3)
         assert self.m[0].active_is_multidimensional
 
     def test_one_component_multidim(self):
         self.m[0].active_is_multidimensional = True
 
         s = self.m.as_signal(component_list=[0])
-        assert np.all(s.data == 2.0)
+        np.testing.assert_allclose(s.data, 2.0)
         assert self.m[1].active
         assert not self.m[1].active_is_multidimensional
 
         s = self.m.as_signal(component_list=[1])
-        np.testing.assert_equal(s.data, 2.0)
+        np.testing.assert_allclose(s.data, 3.0)
         assert self.m[0].active_is_multidimensional
 
         self.m[0]._active_array[0] = False
         s = self.m.as_signal(component_list=[1])
-        assert np.all(s.data == 2.0)
+        np.testing.assert_allclose(s.data, 3.0)
 
         s = self.m.as_signal(component_list=[0])
-        np.testing.assert_array_equal(
-            s.data, np.array([np.zeros((2, 5)), np.ones((2, 5)) * 2])
-        )
+        # selected component is not active
+        np.testing.assert_allclose(s.data, np.zeros((2, 2, 5)))
 
     def test_out_of_range_to_nan(self):
         index = 2
@@ -679,8 +676,8 @@ class TestAsSignal:
     def test_out_argument(self):
         out = self.m.as_signal()
         out.data.fill(0)
-        s = self.m.as_signal(out=out)
-        assert np.all(s.data == 4.0)
+        self.m.as_signal(out=out)
+        np.testing.assert_allclose(out.data, 5.0)
 
 
 @lazifyTestClass

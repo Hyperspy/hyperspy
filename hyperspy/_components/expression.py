@@ -369,7 +369,14 @@ class Expression(Component):
         numpy.ndarray : the component values
         """
         if parameters_values is None:
-            parameters_values = [p.map["values"] for p in self.parameters]
+            parameters_values = []
+            try:
+                parameters_values = [p.map["values"] for p in self.parameters]
+            except TypeError:
+                # When p.map is None
+                raise RuntimeError(
+                    "The parameter map must be set before using `function_nd`."
+                )
 
         if self._is2D:
             x, y = args[0], args[1]
@@ -380,7 +387,7 @@ class Expression(Component):
                 return self._f(
                     x[np.newaxis, ...],
                     y[np.newaxis, ...],
-                    *[p[..., np.newaxis, np.newaxis] for p in self.parameters],
+                    *[p[..., np.newaxis, np.newaxis] for p in parameters_values],
                 )
         else:
             x = args[0]

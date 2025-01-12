@@ -240,7 +240,7 @@ class TestLinearFitting:
 @lazifyTestClass
 class TestFitAlgorithms:
     def setup_method(self, method):
-        s = hs.signals.Signal1D(np.arange(1, 100))
+        s = hs.signals.Signal1D(np.arange(100, dtype=float))
         m = s.create_model()
         g1 = hs.model.components1D.Gaussian()
         g1.sigma.free = False
@@ -294,7 +294,7 @@ class TestFitAlgorithms:
         else:
             m.fit(optimizer="ridge")
         ridge_fit = m.as_signal()
-        np.testing.assert_allclose(self.nonlinear_fit_res, ridge_fit.data, rtol=5e-3)
+        np.testing.assert_allclose(self.nonlinear_fit_res, ridge_fit.data, atol=1e-4)
         linear_std = [para.std for para in m._free_parameters if para.std]
         np.testing.assert_allclose(self.nonlinear_fit_std, linear_std, atol=1e-2)
 
@@ -460,6 +460,10 @@ class TestLinearModel2D:
                 m.append(g)
 
         m.fit(optimizer="lstsq")
+        m.assign_current_values_to_all()
+        np.testing.assert_allclose(s.data, m.as_signal().data)
+
+        m.multifit(optimizer="lstsq")
         np.testing.assert_allclose(s.data, m.as_signal().data)
 
     @pytest.mark.parametrize("nav2d", [False, True])
@@ -482,9 +486,13 @@ class TestLinearModel2D:
         m = s.create_model()
         m.append(P)
         m.fit(optimizer="lstsq")
+        m.assign_current_values_to_all()
         diff = s - m.as_signal(show_progressbar=False)
         np.testing.assert_allclose(diff.data, 0.0, atol=1e-7)
         np.testing.assert_allclose(m.p_std, 0.0, atol=1e-7)
+
+        m.multifit(optimizer="lstsq")
+        np.testing.assert_allclose(s.data, m.as_signal().data)
 
 
 class TestLinearFitTwins:
@@ -722,6 +730,7 @@ def test_navigation_shape(navigation_dim):
     g.A.value = 1000
     m = s.create_model()
     m.append(g)
+    m.assign_current_values_to_all()
     g.A.map["values"] = rng.integers(low=500, high=1500, size=nav_shape)
     g.A.map["is_set"] = True
     s.data = m.as_signal().data

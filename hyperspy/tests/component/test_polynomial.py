@@ -22,7 +22,6 @@ import numpy as np
 import pytest
 
 import hyperspy.api as hs
-from hyperspy.models.model1d import Model1D
 
 TRUE_FALSE_2_TUPLE = [p for p in itertools.product((True, False), repeat=2)]
 
@@ -93,9 +92,11 @@ class TestPolynomial:
             m.append(hs.model.components1D.Polynomial(order=0))
 
     def test_2d_signal(self):
-        # This code should run smoothly, any exceptions should trigger failure
+        for p in self.m_2d[0].parameters:
+            p.map["values"] = p.value
         s = self.m_2d.as_signal()
-        model = Model1D(s)
+
+        model = s.create_model()
         p = hs.model.components1D.Polynomial(order=2)
         model.append(p)
         p.estimate_parameters(s, 0, 100, only_current=False)
@@ -104,9 +105,11 @@ class TestPolynomial:
         np.testing.assert_allclose(p.a0.map["values"], 3)
 
     def test_3d_signal(self):
-        # This code should run smoothly, any exceptions should trigger failure
+        for p in self.m_3d[0].parameters:
+            p.map["values"] = p.value
         s = self.m_3d.as_signal()
-        model = Model1D(s)
+
+        model = s.create_model()
         p = hs.model.components1D.Polynomial(order=2)
         model.append(p)
         p.estimate_parameters(s, 0, 100, only_current=False)
