@@ -16,10 +16,13 @@
 # You should have received a copy of the GNU General Public License
 # along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
+import logging
 from unittest import mock
 
+import dask
 import numpy as np
 import pytest
+from packaging.version import Version
 
 import hyperspy.api as hs
 from hyperspy.decorators import lazifyTestClass
@@ -678,6 +681,44 @@ class TestAsSignal:
         out.data.fill(0)
         self.m.as_signal(out=out)
         np.testing.assert_allclose(out.data, 5.0)
+
+    def test_component_out_of_range_to_nan_old_dask_lazy(self):
+        m = self.m
+        m.signal = m.signal.as_lazy()
+        if Version(dask.__version__) < Version("2024.12.0"):
+            with pytest.raises(ValueError):
+                _ = m.as_signal(out_of_range_to_nan=True)
+        else:
+            m.as_signal(out_of_range_to_nan=True)
+
+    def test_component_no_function_nd(self, caplog):
+        from hyperspy.component import Component
+
+        class CustomComponent(Component):
+            def __init__(self, p1=1, p2=2):
+                Component.__init__(self, ("p1", "p2"))
+
+                self.p1.value = p1
+                self.p2.value = p2
+
+            def function(self, x):
+                p1 = self.p1.value
+                p2 = self.p2.value
+                return p1 + x * p2
+
+        s = self.m.signal
+        m = s.create_model()
+        m.append(CustomComponent())
+
+        with pytest.raises(ValueError):
+            # out_of_range_to_nan not supported
+            _ = m.as_signal()
+
+        if Version(dask.__version__) >= Version("2024.12.0"):
+            with caplog.at_level(logging.WARNING):
+                # should warn about slow implementation
+                _ = m.as_signal(out_of_range_to_nan=False)
+            assert "don't implement the `function_nd`" in caplog.text
 
 
 @lazifyTestClass

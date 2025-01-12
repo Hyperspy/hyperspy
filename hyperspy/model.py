@@ -52,6 +52,7 @@ from hyperspy.extensions import ALL_EXTENSIONS
 from hyperspy.external.mpfit.mpfit import mpfit
 from hyperspy.external.progressbar import progressbar
 from hyperspy.io import assign_signal_subclass
+from hyperspy.misc.array_tools import get_chunk_slice
 from hyperspy.misc.export_dictionary import (
     export_to_dictionary,
     load_from_dictionary,
@@ -176,6 +177,26 @@ def _get_model_data_function_nd(
     sig_slices=None,
     shape=None,
 ):
+    """
+    Compute the model data in a vectorised manner
+
+    Parameters
+    ----------
+    model : hyperspy.model.BaseModel
+        The model used to calculate the data.
+    component_list : list, tuple of hyperspy.component.Component or None, optional
+        The list of components used to calculate the model. If None, all
+        components of the model are used. The default is None.
+    out_of_range_to_nan : bool
+        If True the signal range outside of the fitted range is filled with
+        nans. Default True.
+    nav_slices : slice or None
+        The slices in navigation space. If None, the whole navigation space is used.
+    sig_slices : slice or None
+        The slices in signal space. If None, the whole signal space is used.
+    shape : tuple or None
+        The shape of the output array. If None, the shape of signal array is used.
+    """
     signal_axis = model.axes_manager[-1]
     if nav_slices is None:
         nav_slices = tuple([slice(None)] * model.axes_manager.navigation_dimension)
@@ -184,8 +205,6 @@ def _get_model_data_function_nd(
 
     data_ = np.zeros(shape, dtype=float)
     for component in component_list:
-        # TODO: check if the binning scale factor / add tests
-        # TODO: check order axis / add tests
         axis_ = model.axes_manager["sig"].get("axis")["axis"]
         if len(axis_) >= 2:
             axis_ = np.meshgrid(*axis_)
@@ -208,7 +227,6 @@ def _get_model_data_function_nd(
     if out_of_range_to_nan:
         if sig_slices is None:
             sig_slices = tuple([slice(None)] * model.axes_manager.signal_dimension)
-        # TODO: check if this works with Model2D
         data_[..., np.invert(model._channel_switches[sig_slices])] = np.nan
 
     return data_
@@ -216,7 +234,7 @@ def _get_model_data_function_nd(
 
 def _get_model_data_chunk(
     model,
-    component_list=None,
+    component_list,
     out_of_range_to_nan=True,
     block_info=None,
 ):
@@ -230,6 +248,9 @@ def _get_model_data_chunk(
     component_list : list, tuple of hyperspy.component.Component or None, optional
         The list of components used to calculate the model. If None, all
         components of the model are used. The default is None.
+    out_of_range_to_nan : bool
+        If True the signal range outside of the fitted range is filled with
+        nans. Default True.
     block_info : dict or None
         Passed by dask to provide the chunk location and shape.
 
@@ -239,10 +260,6 @@ def _get_model_data_chunk(
         The calculated model data for the given chunk and components.
 
     """
-    """Get a chunk of calculate model data"""
-    if component_list is None:
-        component_list = model
-
     chunk_slice = block_info[None]["array-location"]
     chunk_shape = block_info[None]["chunk-shape"]
     nav_slices = tuple(
@@ -263,37 +280,6 @@ def _get_model_data_chunk(
     )
 
 
-def get_chunk_slice(
-    shape,
-    signal_dimension,
-    chunks="auto",
-    block_size_limit=None,
-    dtype=None,
-):
-    if chunks == "auto":
-        # no chunking along signal_dimension
-        chunks = ("auto",) * len(shape[:-signal_dimension]) + (-1,)
-    elif chunks == "dask_auto":
-        # Use dask auto
-        chunks = "auto"
-
-    chunks = da.core.normalize_chunks(
-        chunks=chunks, shape=shape, limit=block_size_limit, dtype=dtype
-    )
-    chunks_shape = tuple([len(c) for c in chunks])
-    slices = np.empty(
-        shape=chunks_shape + (len(chunks_shape), 2),
-        dtype=int,
-    )
-    for ind in np.ndindex(chunks_shape):
-        current_chunk = [chunk[i] for i, chunk in zip(ind, chunks)]
-        starts = [int(np.sum(chunk[:i])) for i, chunk in zip(ind, chunks)]
-        stops = [s + c for s, c in zip(starts, current_chunk)]
-        slices[ind] = [[start, stop] for start, stop in zip(starts, stops)]
-
-    return slices, chunks
-
-
 def _model_as_signal_lazy_data(
     model,
     component_list=None,
@@ -310,6 +296,7 @@ def _model_as_signal_lazy_data(
     component_list : list, tuple of hyperspy.component.Component or None, optional
         The list of components used to calculate the model. If None, all
         components of the model are used. The default is None.
+    chunks : "auto", "dask_auto" or tuple.
 
     Returns
     -------
@@ -327,7 +314,7 @@ def _model_as_signal_lazy_data(
     data = da.map_blocks(
         _get_model_data_chunk,
         model,
-        component_list=component_list,
+        component_list,
         dtype=float,
         chunks=data_chunks,
         meta=np.array((), dtype=float),
@@ -833,28 +820,23 @@ class BaseModel(list):
                 # we need to keep this code path to support components without
                 # function_nd implementation, for example when loading old models
                 # lazy signal not supported with this code path
-                if lazy_output:
-                    name = ", ".join(
-                        [
-                            c.name
-                            for c in component_list
-                            if not hasattr(c, "function_nd")
-                        ]
+                name = ", ".join(
+                    [c.name for c in component_list if not hasattr(c, "function_nd")]
+                )
+                if Version(dask.__version__) >= Version("2024.12.0"):
+                    _logger.warning(
+                        f"Using slow `as_signal` because some components ({name}) "
+                        "don't implement the `function_nd` method."
                     )
-                    if Version(dask.__version__) >= Version("2024.12.0"):
-                        _logger.warning(
-                            f"Using slow `as_signal` because some components ({name}) "
-                            "don't implement the `function_nd` method."
-                        )
-                    data_ = self._as_signal_iter(
-                        component_list=component_list,
-                        show_progressbar=show_progressbar,
+                if out_of_range_to_nan:
+                    raise ValueError(
+                        "'out_of_range_to_nan' parameter is not supported with "
+                        "components not implementing the `function_nd` method."
                     )
-                    if out_of_range_to_nan:
-                        raise ValueError(
-                            "'out_of_range_to_nan' parameter is not supported with "
-                            "components not implementing the `function_nd` method."
-                        )
+                data_ = self._as_signal_iter(
+                    component_list=component_list,
+                    show_progressbar=show_progressbar,
+                )
             else:
                 if Version(dask.__version__) >= Version("2024.12.0"):
                     # lazy output using vectorized function_nd
@@ -864,6 +846,7 @@ class BaseModel(list):
                         self, component_list, chunks, block_size_limit
                     )
                 else:
+                    print("ooooooo")
                     if out_of_range_to_nan:
                         raise ValueError(
                             "'out_of_range_to_nan' is not supported for dask < 2024.12.0."
