@@ -16,13 +16,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        #EXTENSION_VERSION: ['release', 'dev']
-        EXTENSION_VERSION: ['dev']
+        EXTENSION_VERSION: ['release', 'dev']
 
     env:
       MPLBACKEND: agg
       EXTENSION: kikuchipy lumispy pyxem atomap
       TEST_DEPS: pytest pytest-xdist pytest-rerunfailures pytest-instafail
+      PYTHON_VERSION: '3.12'
     defaults:
       run:
         shell: bash -l {0}
@@ -32,19 +32,22 @@ jobs:
 
       - uses: conda-incubator/setup-miniconda@v3
         with:
-          miniforge-variant: Mambaforge
           miniforge-version: latest
-          # use base environment, so that when using pip, this is from the
-          # mambaforge distribution
-          auto-activate-base: true
-          activate-environment: ""
+          python-version: ${{ env.PYTHON_VERSION }}
+          activate-environment: "test"
+          conda-remove-defaults: "true"
 
+      - name: Install pip and Test dependencies
+        run: |
+          mamba install pip ${{ env.TEST_DEPS }}
+          
       - name: Conda info
         run: |
           conda info
           conda list
 
-      - name: Install extensions and Test dependencies
+      - name: Install extensions (release)
+        if: contains(matrix.EXTENSION_VERSION, 'release')
         run: |
           mamba install hyperspy-base ${{ env.EXTENSION }} ${{ env.TEST_DEPS }}
 
@@ -56,7 +59,7 @@ jobs:
         run: |
           pip install .
 
-      - name: Install Extension Dev
+      - name: Install Extension (dev)
         if: contains(matrix.EXTENSION_VERSION, 'dev')
         run: |
           pip install https://github.com/lumispy/lumispy/archive/main.zip
@@ -75,7 +78,6 @@ jobs:
         if: ${{ always() }}
         run: |
           # Virtual buffer (xvfb) required for tests using PyVista
-          sudo apt-get install xvfb
           xvfb-run python -m pytest --pyargs kikuchipy
 
       - name: Run LumiSpy Test Suite
@@ -98,10 +100,7 @@ jobs:
         run: |
           python -m pytest --pyargs exspy
   
-      #  The currently released version of Atomap (0.3.1) does not work with this test
-      #  environment. Thus, only the dev version is currently tested. If a newer version
-      #  of Atomap is released, the "if" can be changed to always().
       - name: Run atomap Test Suite
-        if: contains(matrix.EXTENSION_VERSION, 'dev')
+        if: ${{ always() }}
         run: |
           python -m pytest --pyargs atomap
