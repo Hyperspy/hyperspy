@@ -154,7 +154,8 @@ class ScalableFixedPattern(Component):
 
         Returns
         -------
-        numpy.ndarray : the component values
+        numpy.ndarray
+            The component values.
         """
         if self._is_navigation_multidimensional:
             x = axis[np.newaxis, :]

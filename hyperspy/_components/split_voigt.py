@@ -137,7 +137,8 @@ class SplitVoigt(Component):
 
         Returns
         -------
-        numpy.ndarray : the component values
+        numpy.ndarray
+            The component values.
         """
         if self._is_navigation_multidimensional:
             if parameters_values is None:

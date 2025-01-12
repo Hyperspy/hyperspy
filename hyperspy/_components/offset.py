@@ -129,7 +129,8 @@ class Offset(Component):
 
         Returns
         -------
-        numpy.ndarray : the component values
+        numpy.ndarray
+            The component values.
         """
         if parameters_values is None:
             parameters_values = [self.offset.map["values"]]

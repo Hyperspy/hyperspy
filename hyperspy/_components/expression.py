@@ -366,7 +366,8 @@ class Expression(Component):
 
         Returns
         -------
-        numpy.ndarray : the component values
+        numpy.ndarray
+            The component values.
         """
         if parameters_values is None:
             parameters_values = []
