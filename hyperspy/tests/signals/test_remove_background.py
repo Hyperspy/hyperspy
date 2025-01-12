@@ -63,23 +63,32 @@ class TestRemoveBackground1DGaussian:
             s1 = out[0]
             model = out[1]
             np.testing.assert_allclose(model.chisq.data, 0.0, atol=1e-12)
-            np.testing.assert_allclose(model.as_signal().data, signal.data, atol=1e-12)
+            # Use out_of_range_to_nan=False to test lazily
+            # with dask version < 2024.12.0
+            np.testing.assert_allclose(
+                model.as_signal(out_of_range_to_nan=False).data, signal.data, atol=1e-12
+            )
         else:
             s1 = out
 
         np.testing.assert_allclose(s1.data, 0.0, atol=1e-12)
 
-    def test_background_remove_navigation(self):
+    @pytest.mark.parametrize("fast", [True, False])
+    def test_background_remove_navigation(self, fast):
         # Check it calculate the chisq
         s2 = hs.stack([self.signal] * 2)
         (s, model) = s2.remove_background(
             signal_range=(None, None),
             background_type="Gaussian",
-            fast=True,
+            fast=fast,
             return_model=True,
         )
         np.testing.assert_allclose(model.chisq.data, np.array([0.0, 0.0]), atol=1e-12)
-        np.testing.assert_allclose(model.as_signal().data, s2.data)
+        # Use out_of_range_to_nan=False to test lazily
+        # with dask version < 2024.12.0
+        np.testing.assert_allclose(
+            model.as_signal(out_of_range_to_nan=False).data, s2.data
+        )
         np.testing.assert_allclose(s.data, 0.0, atol=1e-12)
 
 

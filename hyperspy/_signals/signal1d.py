@@ -1130,7 +1130,9 @@ class Signal1D(BaseSignal, CommonSignal1D):
             model.multifit(show_progressbar=show_progressbar, iterpath="serpentine")
             model.reset_signal_range()
 
-        result = self - model.as_signal()
+        result = self - model.as_signal(
+            out_of_range_to_nan=False, show_progressbar=show_progressbar
+        )
 
         if zero_fill:
             if self._lazy:

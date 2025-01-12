@@ -18,8 +18,10 @@
 
 import warnings
 
+import dask
 import numpy as np
 import pytest
+from packaging.version import Version
 
 import hyperspy.api as hs
 from hyperspy.component import Component
@@ -79,7 +81,9 @@ class TestMultiFitLinear:
         m.append(L)
 
         m.fit(optimizer="lstsq")
-        single = m.as_signal()
+        # Use out_of_range_to_nan=False to test lazily
+        # with dask version < 2024.12.0
+        single = m.as_signal(out_of_range_to_nan=False)
         m.assign_current_values_to_all()
         cm = (
             pytest.warns(UserWarning)
@@ -88,7 +92,7 @@ class TestMultiFitLinear:
         )
         with cm:
             m.multifit(optimizer="lstsq")
-        multi = m.as_signal()
+        multi = m.as_signal(out_of_range_to_nan=False)
 
         np.testing.assert_allclose(
             single._get_current_data(), multi._get_current_data()
@@ -134,7 +138,9 @@ class TestMultiFitLinear:
         m.append(L)
 
         m.fit(optimizer="lstsq")
-        single = m.as_signal()
+        # Use out_of_range_to_nan=False to test lazily
+        # with dask version < 2024.12.0
+        single = m.as_signal(out_of_range_to_nan=False)
         m.assign_current_values_to_all()
         cm = (
             pytest.warns(UserWarning)
@@ -143,13 +149,17 @@ class TestMultiFitLinear:
         )
         with cm:
             m.multifit(optimizer="lstsq")
-        multi = m.as_signal()
+        multi = m.as_signal(out_of_range_to_nan=False)
         # compare fits from first pixel
         np.testing.assert_allclose(
             single._get_current_data(), multi._get_current_data()
         )
 
     def test_channel_switches(self, weighted):
+        if self.s._lazy and Version(dask.__version__) < Version("2024.12.0"):
+            pytest.skip(
+                "out_of_range_to_nan not supported lazily with dask < 2024.12.0"
+            )
         self._post_setup_method(weighted)
         m = self.m
         m._channel_switches[5:-5] = False
@@ -257,14 +267,18 @@ class TestFitAlgorithms:
             variance = np.arange(10, m.signal.data.size - 10, 0.01)
             m.signal.set_noise_variance(Signal1D(variance))
         m.fit()
-        self.nonlinear_fit_res = m.as_signal()
+        # Use out_of_range_to_nan=False to test lazily
+        # with dask version < 2024.12.0
+        self.nonlinear_fit_res = m.as_signal(out_of_range_to_nan=False)
         self.nonlinear_fit_std = [p.std for p in m._free_parameters if p.std]
 
     def test_compare_lstsq(self, weighted):
         self._post_setup_method(weighted)
         m = self.m
         m.fit(optimizer="lstsq")
-        lstsq_fit = m.as_signal()
+        # Use out_of_range_to_nan=False to test lazily
+        # with dask version < 2024.12.0
+        lstsq_fit = m.as_signal(out_of_range_to_nan=False)
         np.testing.assert_allclose(
             self.nonlinear_fit_res, lstsq_fit._get_current_data(), atol=1e-8
         )
@@ -276,9 +290,11 @@ class TestFitAlgorithms:
         m = self.m
         m[1].active = False
         m.fit(optimizer="lstsq")
-        linear_fit = m.as_signal()
+        # Use out_of_range_to_nan=False to test lazily
+        # with dask version < 2024.12.0
+        linear_fit = m.as_signal(out_of_range_to_nan=False)
         m.fit()
-        nonlinear_fit = m.as_signal()
+        nonlinear_fit = m.as_signal(out_of_range_to_nan=False)
         np.testing.assert_allclose(
             nonlinear_fit._get_current_data(), linear_fit._get_current_data(), rtol=1e-5
         )
@@ -293,7 +309,9 @@ class TestFitAlgorithms:
             return
         else:
             m.fit(optimizer="ridge")
-        ridge_fit = m.as_signal()
+        # Use out_of_range_to_nan=False to test lazily
+        # with dask version < 2024.12.0
+        ridge_fit = m.as_signal(out_of_range_to_nan=False)
         np.testing.assert_allclose(self.nonlinear_fit_res, ridge_fit.data, atol=1e-4)
         linear_std = [para.std for para in m._free_parameters if para.std]
         np.testing.assert_allclose(self.nonlinear_fit_std, linear_std, atol=1e-2)

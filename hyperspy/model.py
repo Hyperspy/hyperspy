@@ -841,16 +841,20 @@ class BaseModel(list):
                             if not hasattr(c, "function_nd")
                         ]
                     )
-                    raise RuntimeError(
-                        "Getting the signal lazily is not supported because the "
-                        f"components ({name}) don't implement the `function_nd` method."
-                    )
-                else:
+                    if Version(dask.__version__) >= Version("2024.12.0"):
+                        _logger.warning(
+                            f"Using slow `as_signal` because some components ({name}) "
+                            "don't implement the `function_nd` method."
+                        )
                     data_ = self._as_signal_iter(
                         component_list=component_list,
                         show_progressbar=show_progressbar,
-                        out_of_range_to_nan=out_of_range_to_nan,
                     )
+                    if out_of_range_to_nan:
+                        raise ValueError(
+                            "'out_of_range_to_nan' parameter is not supported with "
+                            "components not implementing the `function_nd` method."
+                        )
             else:
                 if Version(dask.__version__) >= Version("2024.12.0"):
                     # lazy output using vectorized function_nd
@@ -860,11 +864,13 @@ class BaseModel(list):
                         self, component_list, chunks, block_size_limit
                     )
                 else:
-                    # Old slow code path
+                    if out_of_range_to_nan:
+                        raise ValueError(
+                            "'out_of_range_to_nan' is not supported for dask < 2024.12.0."
+                        )
                     data_ = self._as_signal_iter(
                         component_list=component_list,
                         show_progressbar=show_progressbar,
-                        out_of_range_to_nan=out_of_range_to_nan,
                     )
 
         # Create signal when out is not provided, otherwise set out.data array
@@ -890,22 +896,19 @@ class BaseModel(list):
     as_signal.__doc__ %= SHOW_PROGRESSBAR_ARG
 
     def _as_signal_iter(
-        self, component_list=None, show_progressbar=None, out_of_range_to_nan=True
+        self,
+        component_list=None,
+        show_progressbar=None,
     ):
         # Note: old slow code path which doesn't support lazy processing
         # Note that show_progressbar can be an int to determine the progressbar
         # position for a thread-friendly bars. Otherwise race conditions are
         # ugly...
+
         if show_progressbar is None:  # pragma: no cover
             show_progressbar = preferences.General.show_progressbar
 
-        if not out_of_range_to_nan:
-            # we want the full signal range, including outside the fitted
-            # range, we need to set all the _channel_switches to True
-            channel_switches_backup = copy.copy(self._channel_switches)
-            self._channel_switches[:] = True
-
-        data_ = np.full_like(self.signal.data, np.nan)
+        data_ = np.full_like(self.signal.data, np.nan, dtype=float)
         with stash_active_state(self if component_list else []):
             if component_list:
                 component_list = [self._get_component(x) for x in component_list]
@@ -925,14 +928,10 @@ class BaseModel(list):
             )
             for index in self.axes_manager:
                 self.fetch_stored_values(only_fixed=False)
-                data_[self.axes_manager._getitem_tuple][
-                    np.where(self._channel_switches)
-                ] = self._get_current_data(onlyactive=True).ravel()
+                data_[self.axes_manager._getitem_tuple] = self._get_current_data(
+                    onlyactive=True
+                ).ravel()
                 pbar.update(1)
-
-        if not out_of_range_to_nan:
-            # Restore the _channel_switches, previously set
-            self._channel_switches[:] = channel_switches_backup
 
         return data_
 
