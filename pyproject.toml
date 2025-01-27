@@ -24,17 +24,14 @@ dependencies = [
     "cloudpickle",
     "dask[array]>=2021.5.1",
     "importlib-metadata>=3.6",
-    "jinja2",
+    "jinja2", # improves representation of lazy signals by dask
     "matplotlib>=3.6",
     "natsort",
     "numpy>=1.20.0",
     "packaging",
     "pint>=0.10",
-    "pooch",
     "prettytable>=2.3",
-    "python-dateutil>=2.5.0",
     "pyyaml",
-    "requests",
     "rosettasciio[hdf5]",
     "scikit-image>=0.18",
     "scipy>=1.6.0",
@@ -144,6 +141,7 @@ speed = [
     "numexpr",
 ]
 tests = [
+    "pooch",
     "pytest-instafail",
     "pytest-mpl",
     "pytest-rerunfailures",
