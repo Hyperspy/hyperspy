@@ -854,7 +854,6 @@ class BaseModel(list):
                         self, component_list, chunks, block_size_limit
                     )
                 else:
-                    print("ooooooo")
                     if out_of_range_to_nan:
                         raise ValueError(
                             "'out_of_range_to_nan' is not supported for dask < 2024.12.0."

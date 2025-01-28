@@ -1671,7 +1671,6 @@ class AxesManager(t.HasTraits):
                 axes = self.signal_axes
             else:
                 return self[(y,)][0]
-            return axes
         else:
             axes = [self._axes_getter(ax) for ax in y]
         _, indices = np.unique([_id for _id in map(id, axes)], return_index=True)
