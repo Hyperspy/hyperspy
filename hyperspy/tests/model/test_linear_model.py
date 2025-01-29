@@ -32,6 +32,11 @@ from hyperspy.misc.utils import dummy_context_manager
 from hyperspy.signals import Signal1D, Signal2D
 
 
+def _skip_test(s):
+    if s._lazy and Version(dask.__version__) < Version("2024.12.0"):
+        pytest.skip("dask version must be >= 2024.12.0.")
+
+
 def test_fit_binned():
     rng = np.random.default_rng(1)
     s = Signal1D(rng.normal(scale=2, size=10000)).get_histogram()
@@ -74,6 +79,7 @@ class TestMultiFitLinear:
             s.estimate_poissonian_noise_variance()
 
     def test_gaussian(self, weighted):
+        _skip_test(self.s)
         self._post_setup_method(weighted)
         m = self.m
         L = Gaussian(centre=15.0)
@@ -132,6 +138,7 @@ class TestMultiFitLinear:
         np.testing.assert_equal(L.A.map["std"], np.nan)
 
     def test_offset(self, weighted):
+        _skip_test(self.s)
         self._post_setup_method(weighted)
         m = self.m
         L = Offset(offset=1.0)
@@ -156,10 +163,7 @@ class TestMultiFitLinear:
         )
 
     def test_channel_switches(self, weighted):
-        if self.s._lazy and Version(dask.__version__) < Version("2024.12.0"):
-            pytest.skip(
-                "out_of_range_to_nan not supported lazily with dask < 2024.12.0"
-            )
+        _skip_test(self.s)
         self._post_setup_method(weighted)
         m = self.m
         m._channel_switches[5:-5] = False
@@ -273,6 +277,7 @@ class TestFitAlgorithms:
         self.nonlinear_fit_std = [p.std for p in m._free_parameters if p.std]
 
     def test_compare_lstsq(self, weighted):
+        _skip_test(self.m.signal)
         self._post_setup_method(weighted)
         m = self.m
         m.fit(optimizer="lstsq")
@@ -286,6 +291,7 @@ class TestFitAlgorithms:
         np.testing.assert_allclose(self.nonlinear_fit_std, linear_std, atol=1e-8)
 
     def test_nonactive_component(self, weighted):
+        _skip_test(self.m.signal)
         self._post_setup_method(weighted)
         m = self.m
         m[1].active = False
@@ -300,6 +306,7 @@ class TestFitAlgorithms:
         )
 
     def test_compare_ridge(self, weighted):
+        _skip_test(self.m.signal)
         self._post_setup_method(weighted)
         pytest.importorskip("sklearn")
         m = self.m

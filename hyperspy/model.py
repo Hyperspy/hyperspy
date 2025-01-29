@@ -812,56 +812,48 @@ class BaseModel(list):
         if lazy_output is None:
             lazy_output = self.signal._lazy
 
-        missing_function_nd = not all(
-            [hasattr(c, "function_nd") for c in component_list]
+        components_with_function_nd = set(
+            [c for c in component_list if hasattr(c, "function_nd")]
+        )
+        components_missing_function_nd = (
+            set(component_list) - components_with_function_nd
         )
 
-        # Get data array
-        if not lazy_output and not missing_function_nd:
-            # Fast code path to create the data using vectorised function_nd non-lazily
-            data_ = _get_model_data_function_nd(
-                self, component_list, out_of_range_to_nan
-            )
-        else:
-            if missing_function_nd:
-                # Old slow code path iterating over indices
-                # we need to keep this code path to support components without
-                # function_nd implementation, for example when loading old models
-                # lazy signal not supported with this code path
-                name = ", ".join(
-                    [c.name for c in component_list if not hasattr(c, "function_nd")]
-                )
-                if Version(dask.__version__) >= Version("2024.12.0"):
-                    _logger.warning(
-                        f"Using slow `as_signal` because some components ({name}) "
-                        "don't implement the `function_nd` method."
-                    )
-                if out_of_range_to_nan:
-                    raise ValueError(
-                        "'out_of_range_to_nan' parameter is not supported with "
-                        "components not implementing the `function_nd` method."
-                    )
-                data_ = self._as_signal_iter(
-                    component_list=component_list,
-                    show_progressbar=show_progressbar,
+        if components_with_function_nd:
+            # Get data array for all components with function_nd
+            if lazy_output:
+                # Issue with passing the model object to _get_model_data_chunk
+                if Version(dask.__version__) < Version("2024.12.0"):
+                    raise RuntimeError("Lazy support needs dask >= 2024.12.0")
+                data_ = _model_as_signal_lazy_data(
+                    self, components_with_function_nd, chunks, block_size_limit
                 )
             else:
-                if Version(dask.__version__) >= Version("2024.12.0"):
-                    # lazy output using vectorized function_nd
-                    # This code path doesn't support dask < 2024.12.0:
-                    # the model object can't be passed through to _get_model_data_chunk
-                    data_ = _model_as_signal_lazy_data(
-                        self, component_list, chunks, block_size_limit
-                    )
-                else:
-                    if out_of_range_to_nan:
-                        raise ValueError(
-                            "'out_of_range_to_nan' is not supported for dask < 2024.12.0."
-                        )
-                    data_ = self._as_signal_iter(
-                        component_list=component_list,
-                        show_progressbar=show_progressbar,
-                    )
+                data_ = _get_model_data_function_nd(
+                    self, components_with_function_nd, out_of_range_to_nan
+                )
+        else:
+            xp = da if lazy_output else np
+            # Make the placeholder array
+            data_ = xp.full_like(self.signal.data, np.nan, dtype=float)
+
+        if components_missing_function_nd:
+            # Add component that doesn't have `function_nd` method
+            # Old slow code path iterating over indices
+            # we need to keep this code path to support components without
+            # function_nd implementation, for example when loading old models
+            # lazy signal not supported with this code path
+            name = ", ".join([c.name for c in components_missing_function_nd])
+            _logger.warning(
+                "Using slow `as_signal` implementation because some components "
+                f"({name}) don't implement the `function_nd` method."
+            )
+            self._as_signal_iter(
+                data_,
+                component_list=components_missing_function_nd,
+                out_of_range_to_nan=out_of_range_to_nan,
+                show_progressbar=show_progressbar,
+            )
 
         # Create signal when out is not provided, otherwise set out.data array
         if out is None:
@@ -887,7 +879,9 @@ class BaseModel(list):
 
     def _as_signal_iter(
         self,
+        data_,
         component_list=None,
+        out_of_range_to_nan=True,
         show_progressbar=None,
     ):
         # Note: old slow code path which doesn't support lazy processing
@@ -895,10 +889,17 @@ class BaseModel(list):
         # position for a thread-friendly bars. Otherwise race conditions are
         # ugly...
 
+        if out_of_range_to_nan and isinstance(data_, da.Array):
+            # requires array assignment which is not compatible with
+            # dask array since dask 2024.12.0
+            raise ValueError(
+                "`out_of_range_to_nan` parameter is not supported with "
+                "components not implementing the `function_nd` method."
+            )
+
         if show_progressbar is None:  # pragma: no cover
             show_progressbar = preferences.General.show_progressbar
 
-        data_ = np.full_like(self.signal.data, np.nan, dtype=float)
         with stash_active_state(self if component_list else []):
             if component_list:
                 component_list = [self._get_component(x) for x in component_list]
@@ -918,9 +919,14 @@ class BaseModel(list):
             )
             for index in self.axes_manager:
                 self.fetch_stored_values(only_fixed=False)
-                data_[self.axes_manager._getitem_tuple] = self._get_current_data(
-                    onlyactive=True
-                ).ravel()
+                if out_of_range_to_nan:
+                    slice_ = np.where(self._channel_switches)
+                else:
+                    slice_ = slice(None, None)
+                data_[self.axes_manager._getitem_tuple][slice_] = (
+                    self._get_current_data(onlyactive=True).ravel()
+                )
+
                 pbar.update(1)
 
         return data_

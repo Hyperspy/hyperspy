@@ -654,7 +654,7 @@ class TestAsSignal:
 
         s = self.m.as_signal(component_list=[0])
         # selected component is not active
-        np.testing.assert_allclose(s.data, np.zeros((2, 2, 5)))
+        np.testing.assert_allclose(s.data, np.full((2, 2, 5), np.nan))
 
     def test_out_of_range_to_nan(self):
         index = 2
@@ -686,10 +686,10 @@ class TestAsSignal:
         m = self.m
         m.signal = m.signal.as_lazy()
         if Version(dask.__version__) < Version("2024.12.0"):
-            with pytest.raises(ValueError):
-                _ = m.as_signal(out_of_range_to_nan=True)
+            with pytest.raises(RuntimeError):
+                _ = m.as_signal()
         else:
-            m.as_signal(out_of_range_to_nan=True)
+            m.as_signal(out_of_range_to_nan=False)
 
     def test_component_no_function_nd(self, caplog):
         from hyperspy.component import Component
@@ -710,14 +710,15 @@ class TestAsSignal:
         m = s.create_model()
         m.append(CustomComponent())
 
+        _ = m.as_signal()
         with pytest.raises(ValueError):
-            # out_of_range_to_nan not supported
-            _ = m.as_signal()
+            # out_of_range_to_nan not supported with lazy output
+            _ = m.as_signal(lazy_output=True)
 
         if Version(dask.__version__) >= Version("2024.12.0"):
             with caplog.at_level(logging.WARNING):
                 # should warn about slow implementation
-                _ = m.as_signal(out_of_range_to_nan=False)
+                _ = m.as_signal(out_of_range_to_nan=False, lazy_output=True)
             assert "don't implement the `function_nd`" in caplog.text
 
     def test_value_unset(self):

@@ -18,12 +18,19 @@
 
 import gc
 
+import dask
 import numpy as np
 import pytest
+from packaging.version import Version
 
 import hyperspy.api as hs
 from hyperspy import components1d
 from hyperspy.decorators import lazifyTestClass
+
+
+def _skip_test(s):
+    if s._lazy and Version(dask.__version__) < Version("2024.12.0"):
+        pytest.skip("dask version must be >= 2024.12.0.")
 
 
 def teardown_module(module):
@@ -50,6 +57,7 @@ class TestRemoveBackground1DGaussian:
     @pytest.mark.parametrize("return_model", [False, True])
     def test_background_remove(self, binning, fast, return_model, uniform):
         signal = self.signal
+        _skip_test(signal)
         signal.axes_manager[-1].is_binned = binning
         if not uniform:
             signal.axes_manager[-1].convert_to_non_uniform_axis()
@@ -75,6 +83,7 @@ class TestRemoveBackground1DGaussian:
 
     @pytest.mark.parametrize("fast", [True, False])
     def test_background_remove_navigation(self, fast):
+        _skip_test(self.signal)
         # Check it calculate the chisq
         s2 = hs.stack([self.signal] * 2)
         (s, model) = s2.remove_background(
@@ -104,6 +113,7 @@ class TestRemoveBackground1DLorentzian:
         self.signal.axes_manager[0].is_binned = False
 
     def test_background_remove_lorentzian(self):
+        _skip_test(self.signal)
         # Fast is not accurate
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="Lorentzian"
@@ -111,6 +121,7 @@ class TestRemoveBackground1DLorentzian:
         np.testing.assert_allclose(s1.data, 0.0, atol=0.2)
 
     def test_background_remove_lorentzian_full_fit(self):
+        _skip_test(self.signal)
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="Lorentzian", fast=False
         )
@@ -134,6 +145,7 @@ class TestRemoveBackground1DPowerLaw:
         self.atol_zero_fill = 0.04 * abs(self.signal.isig[10:].data).max()
 
     def test_background_remove_pl(self):
+        _skip_test(self.signal)
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="PowerLaw"
         )
@@ -141,6 +153,7 @@ class TestRemoveBackground1DPowerLaw:
         assert s1.axes_manager.navigation_dimension == 0
 
     def test_background_remove_pl_zero(self):
+        _skip_test(self.signal)
         s1 = self.signal_noisy.remove_background(
             signal_range=(110.0, 190.0), background_type="PowerLaw", zero_fill=True
         )
@@ -148,6 +161,7 @@ class TestRemoveBackground1DPowerLaw:
         np.testing.assert_allclose(s1.data[:10], np.zeros(10))
 
     def test_background_remove_pl_int(self):
+        _skip_test(self.signal)
         self.signal.change_dtype("int")
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="PowerLaw"
@@ -155,6 +169,7 @@ class TestRemoveBackground1DPowerLaw:
         np.testing.assert_allclose(s1.data, 0.0, atol=self.atol)
 
     def test_background_remove_pl_int_zero(self):
+        _skip_test(self.signal)
         self.signal_noisy.change_dtype("int")
         s1 = self.signal_noisy.remove_background(
             signal_range=(110.0, 190.0), background_type="PowerLaw", zero_fill=True
@@ -177,12 +192,14 @@ class TestRemoveBackground1DSkewNormal:
 
     def test_background_remove_skewnormal(self):
         # Fast is not accurate
+        _skip_test(self.signal)
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="SkewNormal"
         )
         np.testing.assert_allclose(s1.data, 0.0, atol=0.2)
 
     def test_background_remove_skewnormal_full_fit(self):
+        _skip_test(self.signal)
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="SkewNormal", fast=False
         )
@@ -203,12 +220,14 @@ class TestRemoveBackground1DVoigt:
 
     def test_background_remove_voigt(self):
         # resort to fast=False as estimator guesses only Gaussian width
+        _skip_test(self.signal)
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="Voigt", fast=False
         )
         np.testing.assert_allclose(s1.data, 0.0, atol=1e-12)
 
     def test_background_remove_voigt_full_fit(self):
+        _skip_test(self.signal)
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="Voigt", fast=False
         )
@@ -230,12 +249,14 @@ class TestRemoveBackground1DExponential:
 
     def test_background_remove_exponential(self):
         # Fast is not accurate
+        _skip_test(self.signal)
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="Exponential"
         )
         np.testing.assert_allclose(s1.data, 0.0, atol=self.atol)
 
     def test_background_remove_exponential_full_fit(self):
+        _skip_test(self.signal)
         s1 = self.signal.remove_background(
             signal_range=(None, None), background_type="Exponential", fast=False
         )
