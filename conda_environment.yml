@@ -9,8 +9,8 @@ dependencies:
 - jinja2
 - matplotlib-base >=3.6
 - natsort
-- numba >=0.52
-- numexpr
+- numba >=0.53
+- numexpr >=2.8
 - numpy >=1.20
 - packaging
 - pint >=0.10
@@ -22,6 +22,6 @@ dependencies:
 - scikit-image >=0.18
 - scikit-learn >=1.0.1
 - scipy >=1.6.0
-- sympy >=1.6.0
+- sympy >=1.10
 - tqdm >=4.9.0
 - traits >=4.5.0
