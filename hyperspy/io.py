@@ -456,7 +456,8 @@ def load(
     elif isgenerator(filenames):
         filenames = list(filenames)
 
-    elif not isinstance(filenames, (list, tuple, MutableMapping)):
+    # pathlib.Path.glob returns a map object in python 3.13
+    elif not isinstance(filenames, (list, tuple, MutableMapping, map)):
         raise ValueError(
             "The filenames parameter must be a list, tuple, "
             f"string or None, not {type(filenames)}"
