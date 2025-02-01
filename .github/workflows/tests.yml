@@ -84,18 +84,6 @@ jobs:
           python --version
           pip --version
 
-      - name: Install traits dev for python 3.13
-        if: ${{ matrix.PYTHON_VERSION == '3.13' }}
-        run: |
-          # traits release with python 3.13 pending
-          pip install git+https://github.com/enthought/traits.git
-
-      - name: Install scikit-image 0.25.0-rc1
-        if: ${{ matrix.PYTHON_VERSION == '3.13' }}
-        run: |
-          # speed up build until scikit-image 0.25 is released
-          pip install scikit-image --pre
-
       - name: Install
         shell: bash
         run: |
