@@ -26,10 +26,12 @@ from contextlib import contextmanager
 from functools import partial
 
 import cloudpickle
+import dask
 import dask.array as da
 import numpy as np
 import scipy.odr as odr
 from dask.diagnostics import ProgressBar
+from packaging.version import Version
 from scipy.linalg import svd
 from scipy.optimize import (
     OptimizeResult,
@@ -49,6 +51,8 @@ from hyperspy.exceptions import VisibleDeprecationWarning
 from hyperspy.extensions import ALL_EXTENSIONS
 from hyperspy.external.mpfit.mpfit import mpfit
 from hyperspy.external.progressbar import progressbar
+from hyperspy.io import assign_signal_subclass
+from hyperspy.misc.array_tools import get_chunk_slice
 from hyperspy.misc.export_dictionary import (
     export_to_dictionary,
     load_from_dictionary,
@@ -163,6 +167,167 @@ def reconstruct_component(comp_dictionary, **init_args):
             + f'{comp_dictionary["package"]} is not installed.'
         )
     return _class(**init_args)
+
+
+def _get_model_data_function_nd(
+    model,
+    component_list,
+    out_of_range_to_nan,
+    nav_slices=None,
+    sig_slices=None,
+    shape=None,
+):
+    """
+    Compute the model data in a vectorised manner.
+
+    Parameters
+    ----------
+    model : hyperspy.model.BaseModel
+        The model used to calculate the data.
+    component_list : list, tuple of hyperspy.component.Component or None, optional
+        The list of components used to calculate the model. If None, all
+        components of the model are used. The default is None.
+    out_of_range_to_nan : bool
+        If True the signal range outside of the fitted range is filled with
+        nans. Default True.
+    nav_slices : slice or None
+        The slices in navigation space. If None, the whole navigation space is used.
+    sig_slices : slice or None
+        The slices in signal space. If None, the whole signal space is used.
+    shape : tuple or None
+        The shape of the output array. If None, the shape of signal array is used.
+    """
+    signal_axis = model.axes_manager[-1]
+    if nav_slices is None:
+        nav_slices = tuple([slice(None)] * model.axes_manager.navigation_dimension)
+    if shape is None:
+        shape = model.signal.data.shape
+
+    data_ = np.zeros(shape, dtype=float)
+    for component in component_list:
+        for p in component.parameters:
+            if not p.map["is_set"][nav_slices].all():
+                raise ValueError(
+                    f"The parameter {p.name} of the component {component.name} "
+                    "has unset values. Set the values by using the `multifit` or "
+                    "the `set_parameters_value` methods."
+                )
+
+        axis_ = model.axes_manager["sig"].get("axis")["axis"]
+        if len(axis_) >= 2:
+            axis_ = np.meshgrid(*axis_)
+        data_ += component.function_nd(
+            *axis_,
+            parameters_values=[
+                p.map["values"][nav_slices] for p in component.parameters
+            ],
+        )
+
+        if signal_axis.is_binned:
+            if signal_axis.is_uniform:
+                scale_factor = signal_axis.scale
+            else:
+                scale_factor = np.gradient(signal_axis.axis)
+        else:
+            scale_factor = 1
+        data_ *= scale_factor
+
+    if out_of_range_to_nan:
+        if sig_slices is None:
+            sig_slices = tuple([slice(None)] * model.axes_manager.signal_dimension)
+        data_[..., np.invert(model._channel_switches[sig_slices])] = np.nan
+
+    return data_
+
+
+def _get_model_data_chunk(
+    model,
+    component_list,
+    out_of_range_to_nan=True,
+    block_info=None,
+):
+    """
+    Compute the model data for a give chunk
+
+    Parameters
+    ----------
+    model : hyperspy.model.BaseModel
+        The model used to calculate the data.
+    component_list : list, tuple of hyperspy.component.Component or None, optional
+        The list of components used to calculate the model. If None, all
+        components of the model are used. The default is None.
+    out_of_range_to_nan : bool
+        If True the signal range outside of the fitted range is filled with
+        nans. Default True.
+    block_info : dict or None
+        Passed by dask to provide the chunk location and shape.
+
+    Returns
+    -------
+    model_data : numpy.ndarray
+        The calculated model data for the given chunk and components.
+
+    """
+    chunk_slice = block_info[None]["array-location"]
+    chunk_shape = block_info[None]["chunk-shape"]
+    nav_slices = tuple(
+        [
+            slice(*slice_)
+            for slice_ in chunk_slice[: model.axes_manager.navigation_dimension]
+        ]
+    )
+    sig_slices = tuple(
+        [
+            slice(*slice_)
+            for slice_ in chunk_slice[model.axes_manager.navigation_dimension :]
+        ]
+    )
+
+    return _get_model_data_function_nd(
+        model, component_list, out_of_range_to_nan, nav_slices, sig_slices, chunk_shape
+    )
+
+
+def _model_as_signal_lazy_data(
+    model,
+    component_list=None,
+    chunks="auto",
+    block_size_limit=None,
+):
+    """
+    Returns a chunk of model data.
+
+    Parameters
+    ----------
+    model : hyperspy.model.BaseModel
+        The model used to create the signal data.
+    component_list : list, tuple of hyperspy.component.Component or None, optional
+        The list of components used to calculate the model. If None, all
+        components of the model are used. The default is None.
+    chunks : "auto", "dask_auto" or tuple.
+
+    Returns
+    -------
+    data : dask array
+        The calculated model data
+    """
+    _, data_chunks = get_chunk_slice(
+        shape=model.signal.data.shape,
+        chunks=chunks,
+        signal_dimension=model.axes_manager.signal_dimension,
+        block_size_limit=block_size_limit,
+        dtype=float,
+    )
+
+    data = da.map_blocks(
+        _get_model_data_chunk,
+        model,
+        component_list,
+        dtype=float,
+        chunks=data_chunks,
+        meta=np.array((), dtype=float),
+    )
+    return data
 
 
 class ModelComponents(object):
@@ -594,6 +759,9 @@ class BaseModel(list):
         out_of_range_to_nan=True,
         show_progressbar=None,
         out=None,
+        lazy_output=None,
+        chunks="auto",
+        block_size_limit=None,
         **kwargs,
     ):
         """Returns a recreation of the dataset using the model.
@@ -635,43 +803,100 @@ class BaseModel(list):
         if show_progressbar is None:
             show_progressbar = preferences.General.show_progressbar
 
-        if out is None:
-            data = np.empty(self.signal.data.shape, dtype="float")
-            data.fill(np.nan)
-            signal = self.signal.__class__(
-                data, axes=self.signal.axes_manager._get_axes_dicts()
+        if component_list is None:
+            component_list = self.active_components
+        else:
+            component_list = [self._get_component(c) for c in component_list]
+            component_list = [c for c in component_list if c.active]
+
+        if lazy_output is None:
+            lazy_output = self.signal._lazy
+
+        components_with_function_nd = set(
+            [c for c in component_list if hasattr(c, "function_nd")]
+        )
+        components_missing_function_nd = (
+            set(component_list) - components_with_function_nd
+        )
+
+        if components_with_function_nd:
+            # Get data array for all components with function_nd
+            if lazy_output:
+                # Issue with passing the model object to _get_model_data_chunk
+                if Version(dask.__version__) < Version("2024.12.0"):
+                    raise RuntimeError("Lazy support needs dask >= 2024.12.0")
+                data_ = _model_as_signal_lazy_data(
+                    self, components_with_function_nd, chunks, block_size_limit
+                )
+            else:
+                data_ = _get_model_data_function_nd(
+                    self, components_with_function_nd, out_of_range_to_nan
+                )
+        else:
+            xp = da if lazy_output else np
+            # Make the placeholder array
+            data_ = xp.full_like(self.signal.data, np.nan, dtype=float)
+
+        if components_missing_function_nd:
+            # Add component that doesn't have `function_nd` method
+            # Old slow code path iterating over indices
+            # we need to keep this code path to support components without
+            # function_nd implementation, for example when loading old models
+            # lazy signal not supported with this code path
+            name = ", ".join([c.name for c in components_missing_function_nd])
+            _logger.warning(
+                "Using slow `as_signal` implementation because some components "
+                f"({name}) don't implement the `function_nd` method."
             )
-            signal.set_signal_type(signal.metadata.Signal.signal_type)
-            signal.metadata.General.title = (
+            self._as_signal_iter(
+                data_,
+                component_list=components_missing_function_nd,
+                out_of_range_to_nan=out_of_range_to_nan,
+                show_progressbar=show_progressbar,
+            )
+
+        # Create signal when out is not provided, otherwise set out.data array
+        if out is None:
+            signal_class = assign_signal_subclass(
+                dtype=self.signal.data.dtype,
+                signal_dimension=self.signal.axes_manager.signal_dimension,
+                signal_type=self.signal.metadata.Signal.signal_type,
+                lazy=lazy_output,
+            )
+            signal_ = signal_class(
+                data_, axes=self.signal.axes_manager._get_axes_dicts()
+            )
+            signal_.metadata.General.title = (
                 self.signal.metadata.General.title + " from fitted model"
             )
         else:
-            signal = out
-            data = signal.data
+            out.data = data_
 
-        if not out_of_range_to_nan:
-            # we want the full signal range, including outside the fitted
-            # range, we need to set all the _channel_switches to True
-            channel_switches_backup = copy.copy(self._channel_switches)
-            self._channel_switches[:] = True
-
-        self._as_signal_iter(
-            component_list=component_list, show_progressbar=show_progressbar, data=data
-        )
-
-        if not out_of_range_to_nan:
-            # Restore the _channel_switches, previously set
-            self._channel_switches[:] = channel_switches_backup
-
-        return signal
+        if out is None:
+            return signal_
 
     as_signal.__doc__ %= SHOW_PROGRESSBAR_ARG
 
-    def _as_signal_iter(self, data, component_list=None, show_progressbar=None):
-        # BUG: with lazy signal returns lazy signal with numpy array
+    def _as_signal_iter(
+        self,
+        data_,
+        component_list=None,
+        out_of_range_to_nan=True,
+        show_progressbar=None,
+    ):
+        # Note: old slow code path which doesn't support lazy processing
         # Note that show_progressbar can be an int to determine the progressbar
         # position for a thread-friendly bars. Otherwise race conditions are
         # ugly...
+
+        if out_of_range_to_nan and isinstance(data_, da.Array):
+            # requires array assignment which is not compatible with
+            # dask array since dask 2024.12.0
+            raise ValueError(
+                "`out_of_range_to_nan` parameter is not supported with "
+                "components not implementing the `function_nd` method."
+            )
+
         if show_progressbar is None:  # pragma: no cover
             show_progressbar = preferences.General.show_progressbar
 
@@ -694,10 +919,17 @@ class BaseModel(list):
             )
             for index in self.axes_manager:
                 self.fetch_stored_values(only_fixed=False)
-                data[self.axes_manager._getitem_tuple][
-                    np.where(self._channel_switches)
-                ] = self._get_current_data(onlyactive=True).ravel()
+                if out_of_range_to_nan:
+                    slice_ = np.where(self._channel_switches)
+                else:
+                    slice_ = slice(None, None)
+                data_[self.axes_manager._getitem_tuple][slice_] = (
+                    self._get_current_data(onlyactive=True).ravel()
+                )
+
                 pbar.update(1)
+
+        return data_
 
     @property
     def _plot_active(self):
