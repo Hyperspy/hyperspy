@@ -576,7 +576,7 @@ Maintenance
 - Drop support for python 3.7, update oldest supported dependencies and simplify code accordingly (`#3144 <https://github.com/hyperspy/hyperspy/issues/3144>`_)
 - IPython and IParallel are now optional dependencies (`#3145 <https://github.com/hyperspy/hyperspy/issues/3145>`_)
 - Fix Numpy 1.25 deprecation: implicit array to scalar conversion in :py:meth:`~.signals.Signal2D.align2D` (`#3189 <https://github.com/hyperspy/hyperspy/issues/3189>`_)
-- Replace deprecated :mod:`scipy.misc` by :mod:`scipy.datasets` in documentation (`#3225 <https://github.com/hyperspy/hyperspy/issues/3225>`_)
+- Replace deprecated ``scipy.misc`` by :mod:`scipy.datasets` in documentation (`#3225 <https://github.com/hyperspy/hyperspy/issues/3225>`_)
 - Fix documentation version switcher (`#3228 <https://github.com/hyperspy/hyperspy/issues/3228>`_)
 - Replace deprecated :py:class:`scipy.interpolate.interp1d` with :py:func:`scipy.interpolate.make_interp_spline` (`#3233 <https://github.com/hyperspy/hyperspy/issues/3233>`_)
 - Add support for python 3.12 (`#3256 <https://github.com/hyperspy/hyperspy/issues/3256>`_)
