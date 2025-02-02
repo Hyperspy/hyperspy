@@ -87,6 +87,7 @@ file = "COPYING.txt"
 
 [project.optional-dependencies]
 all = [
+    "hyperspy[dask-image]",
     "hyperspy[gui-jupyter]",
     "hyperspy[gui-traitsui]",
     "hyperspy[ipython]",
@@ -95,6 +96,9 @@ all = [
 ]
 coverage = [
     "pytest-cov",
+]
+dask-image = [
+    "dask-image",
 ]
 dev = [
     "black",
@@ -167,6 +171,7 @@ omit = [
     "examples/*",
     "hyperspy/conftest.py",
     "hyperspy/tests/*",
+    "hyperspy/external/scipy/*",
     "prepare_release.py",
     "setup.py",
 ]
