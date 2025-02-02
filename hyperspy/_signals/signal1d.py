@@ -1130,22 +1130,9 @@ class Signal1D(BaseSignal, CommonSignal1D):
             model.multifit(show_progressbar=show_progressbar, iterpath="serpentine")
             model.reset_signal_range()
 
-        if self._lazy:
-            result = self - model.as_signal(show_progressbar=show_progressbar)
-        else:
-            try:
-                axis = self.axes_manager.signal_axes[0]
-                if axis.is_binned:
-                    if axis.is_uniform:
-                        scale_factor = axis.scale
-                    else:
-                        scale_factor = np.gradient(axis.axis)
-                else:
-                    scale_factor = 1
-                bkg = background_estimator.function_nd(axis.axis) * scale_factor
-                result = self - bkg
-            except MemoryError:
-                result = self - model.as_signal(show_progressbar=show_progressbar)
+        result = self - model.as_signal(
+            out_of_range_to_nan=False, show_progressbar=show_progressbar
+        )
 
         if zero_fill:
             if self._lazy:
@@ -1658,7 +1645,7 @@ class Signal1D(BaseSignal, CommonSignal1D):
         for c in autoscale:
             if c not in ["x", "v"]:
                 raise ValueError(
-                    "`autoscale` only accepts 'x', 'v' as " "valid characters."
+                    "`autoscale` only accepts 'x', 'v' as valid characters."
                 )
         super().plot(
             navigator=navigator,

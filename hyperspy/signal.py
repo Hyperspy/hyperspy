@@ -2076,8 +2076,7 @@ class MVATools(object):
         """
         if self.axes_manager.signal_dimension > 2:
             raise NotImplementedError(
-                "This method cannot plot factors of "
-                "signals of dimension higher than 2."
+                "This method cannot plot factors of signals of dimension higher than 2."
             )
         cs = self._get_cluster_signals_factors(signal=signal)
         if same_window is None:
@@ -3414,7 +3413,7 @@ class BaseSignal(
         i1, i2 = axis._get_index(start), axis._get_index(end)
         # To prevent an axis error, which may confuse users
         if i1 is not None and i2 is not None and not i1 != i2:
-            raise ValueError("The `start` and `end` values need to be " "different.")
+            raise ValueError("The `start` and `end` values need to be different.")
 
         # We take a copy to guarantee the continuity of the data
         self.data = self.data[
@@ -3641,7 +3640,7 @@ class BaseSignal(
             raise ValueError("One of new_shape, or scale must be specified")
         elif new_shape is not None and scale is not None:
             raise ValueError(
-                "Only one out of new_shape or scale should be specified. " "Not both."
+                "Only one out of new_shape or scale should be specified. Not both."
             )
         elif new_shape:
             if len(new_shape) != len(self.data.shape):
@@ -5828,12 +5827,11 @@ class BaseSignal(
             if dtype in rgb_tools.rgb_dtypes:
                 if self.axes_manager.signal_dimension != 1:
                     raise AttributeError(
-                        "Only 1D signals can be converted " "to RGB images."
+                        "Only 1D signals can be converted to RGB images."
                     )
                 if "8" in dtype and self.data.dtype.name != "uint8":
                     raise AttributeError(
-                        "Only signals with dtype uint8 can be converted to "
-                        "rgb8 images"
+                        "Only signals with dtype uint8 can be converted to rgb8 images"
                     )
                 elif "16" in dtype and self.data.dtype.name != "uint16":
                     raise AttributeError(
@@ -6293,7 +6291,7 @@ class BaseSignal(
     as_signal1D.__doc__ %= (
         ONE_AXIS_PARAMETER,
         OUT_ARG,
-        OPTIMIZE_ARG.replace("False", "True"),
+        OPTIMIZE_ARG,
     )
 
     def as_signal2D(self, image_axes, out=None, optimize=True):
@@ -6348,7 +6346,7 @@ class BaseSignal(
                 out.data[:] = im.data
             out.events.data_changed.trigger(obj=out)
 
-    as_signal2D.__doc__ %= (OUT_ARG, OPTIMIZE_ARG.replace("False", "True"))
+    as_signal2D.__doc__ %= (OUT_ARG, OPTIMIZE_ARG)
 
     def _assign_subclass(self):
         mp = self.metadata
@@ -6829,7 +6827,7 @@ class BaseSignal(
         """
 
         if self.axes_manager.ragged:
-            raise RuntimeError("Signal with ragged dimension can't be " "transposed.")
+            raise RuntimeError("Signal with ragged dimension can't be transposed.")
 
         am = self.axes_manager
         ax_list = am._axes
@@ -6862,12 +6860,12 @@ class BaseSignal(
                 intersection = set(signal_axes).intersection(navigation_axes)
                 if len(intersection):
                     raise ValueError(
-                        "At least one axis found in both spaces:" " {}".format(
+                        "At least one axis found in both spaces: {}".format(
                             intersection
                         )
                     )
                 if len(am._axes) != (len(signal_axes) + len(navigation_axes)):
-                    raise ValueError("Not all current axes were assigned to a " "space")
+                    raise ValueError("Not all current axes were assigned to a space")
             else:
                 raise ValueError(
                     "navigation_axes has to be None or an iterable"
@@ -7087,8 +7085,7 @@ class BaseSignal(
             mask.shape != self.axes_manager.navigation_shape
         ):
             raise ValueError(
-                "The shape of the navigation mask array must "
-                "match `navigation_shape`."
+                "The shape of the navigation mask array must match `navigation_shape`."
             )
 
     def _check_signal_mask(self, mask):
@@ -7125,7 +7122,7 @@ class BaseSignal(
             mask.shape != self.axes_manager.signal_shape
         ):
             raise ValueError(
-                "The shape of signal mask array must match " "`signal_shape`."
+                "The shape of signal mask array must match `signal_shape`."
             )
 
     def to_device(self):

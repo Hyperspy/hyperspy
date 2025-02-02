@@ -1,3 +1,7 @@
+.. _RosettaSciIO: https://hyperspy.org/rosettasciio
+.. _eXSpy: https://hyperspy.org/exspy
+.. _holoSpy: https://hyperspy.org/holospy
+
 .. _changelog:
 
 Changelog
@@ -211,11 +215,11 @@ Release Highlights
 ------------------
 - Hyperspy has split off some of the file reading/writing and domain specific functionalities into separate libraries!
   
-  - `RosettaSciIO <https://hyperspy.org/rosettasciio>`_: A library for reading and writing scientific data files.
+  - RosettaSciIO_: A library for reading and writing scientific data files.
     See `RosettaSciIO release notes <https://hyperspy.org/rosettasciio/changes.html>`_ for new features and supported formats.
-  - `exSpy <https://exspy.readthedocs.io>`_: A library for EELS and EDS analysis.
-    See `exSpy release notes <https://hyperspy.org/exspy/changes.html>`_ for new features.
-  - `holoSpy <https://holospy.readthedocs.io>`_: A library for analysis of (off-axis) electron holography data.
+  - eXSpy_: A library for EELS and EDS analysis.
+    See `eXSpy release notes <https://hyperspy.org/exspy/changes.html>`_ for new features.
+  - holoSpy_: A library for analysis of (off-axis) electron holography data.
     See `holoSpy release notes <https://holospy.readthedocs.io/en/latest/changes.html>`_ for new features.
 
 - The :py:mod:`~.api.plot.markers` API has been refactored
@@ -576,7 +580,7 @@ Maintenance
 - Drop support for python 3.7, update oldest supported dependencies and simplify code accordingly (`#3144 <https://github.com/hyperspy/hyperspy/issues/3144>`_)
 - IPython and IParallel are now optional dependencies (`#3145 <https://github.com/hyperspy/hyperspy/issues/3145>`_)
 - Fix Numpy 1.25 deprecation: implicit array to scalar conversion in :py:meth:`~.signals.Signal2D.align2D` (`#3189 <https://github.com/hyperspy/hyperspy/issues/3189>`_)
-- Replace deprecated :mod:`scipy.misc` by :mod:`scipy.datasets` in documentation (`#3225 <https://github.com/hyperspy/hyperspy/issues/3225>`_)
+- Replace deprecated ``scipy.misc`` by :mod:`scipy.datasets` in documentation (`#3225 <https://github.com/hyperspy/hyperspy/issues/3225>`_)
 - Fix documentation version switcher (`#3228 <https://github.com/hyperspy/hyperspy/issues/3228>`_)
 - Replace deprecated :py:class:`scipy.interpolate.interp1d` with :py:func:`scipy.interpolate.make_interp_spline` (`#3233 <https://github.com/hyperspy/hyperspy/issues/3233>`_)
 - Add support for python 3.12 (`#3256 <https://github.com/hyperspy/hyperspy/issues/3256>`_)
