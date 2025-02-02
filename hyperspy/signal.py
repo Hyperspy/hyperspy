@@ -6293,7 +6293,7 @@ class BaseSignal(
     as_signal1D.__doc__ %= (
         ONE_AXIS_PARAMETER,
         OUT_ARG,
-        OPTIMIZE_ARG.replace("False", "True"),
+        OPTIMIZE_ARG,
     )
 
     def as_signal2D(self, image_axes, out=None, optimize=True):
@@ -6348,7 +6348,7 @@ class BaseSignal(
                 out.data[:] = im.data
             out.events.data_changed.trigger(obj=out)
 
-    as_signal2D.__doc__ %= (OUT_ARG, OPTIMIZE_ARG.replace("False", "True"))
+    as_signal2D.__doc__ %= (OUT_ARG, OPTIMIZE_ARG)
 
     def _assign_subclass(self):
         mp = self.metadata
