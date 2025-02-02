@@ -5603,7 +5603,7 @@ class BaseSignal(
         autodetermine = (
             output_signal_size is None or output_dtype is None
         )  # try to guess output dtype and sig size?
-        if autodetermine and is_cupy_array(self.data):
+        if autodetermine and is_cupy_array(self.data):  # pragma: no cover
             raise ValueError(
                 "Autodetermination of `output_signal_size` and "
                 "`output_dtype` is not supported for cupy array."
@@ -7263,14 +7263,17 @@ class BaseSignal(
                 axes = (axes,)
         else:
             if self.axes_manager.signal_dimension == 1:
+                # Signal1D, use navigation space
                 axes = self.axes_manager.navigation_axes
             else:
+                # Signal2D, use signal_axes
                 axes = self.axes_manager.signal_axes
             if len(axes) == 0:
                 # Use all axes
                 axes = None
 
-        axes = tuple(axis.index_in_array for axis in axes)
+        if axes is not None:
+            axes = tuple(axis.index_in_array for axis in axes)
 
         if self._lazy:
             try:
@@ -7279,7 +7282,7 @@ class BaseSignal(
             except ImportError:
                 raise RuntimeError("`dask_image` is required to remove spikes lazily.")
         else:
-            if is_cupy_array(self.data):
+            if is_cupy_array(self.data):  # pragma: no cover
                 from cupyx.scipy.ndimage import median_filter
             else:
                 from scipy.ndimage import median_filter

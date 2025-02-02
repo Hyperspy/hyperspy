@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with HyperSpy. If not, see <https://www.gnu.org/licenses/#GPL>.
 
+import importlib
 import sys
 from unittest import mock
 
@@ -525,6 +526,16 @@ def test_remove_spikes_axes(lazy):
         s.data[5, 10, :5], [0.6741055, 0.3417235, 0.4364143, 0.5053036, 0.6015408]
     )
 
+    rng = np.random.default_rng(0)
+    data = rng.random(size=(10, 20, 100))
+    data[5, 10, :] = 1e5
+
+    s2 = hs.signals.BaseSignal(data).T
+    s2.remove_spikes()
+    np.testing.assert_allclose(
+        s2.data[5, 10, :5], [0.5962007, 0.549079, 0.4364143, 0.5053036, 0.5053036]
+    )
+
 
 def test_remove_spikes_error():
     s = hs.data.two_gaussians()
@@ -537,6 +548,11 @@ def test_remove_spikes_error():
 
     with pytest.raises(ValueError):
         s.remove_spikes(size=2)
+
+    if not importlib.util.find_spec("dask_image"):
+        s2 = s.as_lazy()
+        with pytest.raises(RuntimeError):
+            s2.remove_spikes()
 
     # create a signals with nan
     s.data = np.where(s.data > 500, np.nan, s.data)
