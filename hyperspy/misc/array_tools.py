@@ -140,7 +140,7 @@ def rebin(a, new_shape=None, scale=None, crop=True, dtype=None):
             scale.append(a.shape[i] / new_shape[i])
     if isinstance(dtype, str) and dtype != "same":
         raise ValueError(
-            "`dtype` argument needs to be None, a numpy dtype or " 'the string "same".'
+            '`dtype` argument needs to be None, a numpy dtype or the string "same".'
         )
 
     # check whether or not interpolation is needed.
@@ -283,7 +283,7 @@ def _linear_bin(dat, scale, crop=True, dtype=None):
 
     if dtype_str_same_integer or dtype_interger:
         raise ValueError(
-            "Linear interpolation requires float dtype, change the " "dtype argument."
+            "Linear interpolation requires float dtype, change the dtype argument."
         )
 
     if np.issubdtype(dat.dtype, np.integer):

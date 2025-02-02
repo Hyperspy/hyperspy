@@ -263,7 +263,7 @@ class Expression(Component):
         except ValueError:
             pass
         else:
-            raise ValueError("Expression must contain a symbol, i.e. x, a, " "etc.")
+            raise ValueError("Expression must contain a symbol, i.e. x, a, etc.")
         expr = _parse_substitutions(self._str_expression)
         self._parsed_expr = expr
 

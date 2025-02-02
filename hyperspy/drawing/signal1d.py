@@ -411,7 +411,7 @@ class Signal1DLine(object):
             )
         elif norm not in ["auto", "linear"]:
             raise ValueError(
-                "`norm` paramater should be 'auto', 'linear' or " "'log' for Signal1D."
+                "`norm` paramater should be 'auto', 'linear' or 'log' for Signal1D."
             )
         else:
             plot = self.ax.plot
