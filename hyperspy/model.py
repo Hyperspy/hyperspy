@@ -161,10 +161,10 @@ def reconstruct_component(comp_dictionary, **init_args):
         if comp_dictionary["_id_name"] in EXSPY_HSPY_COMPONENTS:
             comp_dictionary["package"] = "exspy"
         raise ImportError(
-            f'Loading the {comp_dictionary["_id_name"]} component '
+            f"Loading the {comp_dictionary['_id_name']} component "
             + "failed because the component is provided by the "
-            + f'`{comp_dictionary["package"]}` Python package, but '
-            + f'{comp_dictionary["package"]} is not installed.'
+            + f"`{comp_dictionary['package']}` Python package, but "
+            + f"{comp_dictionary['package']} is not installed."
         )
     return _class(**init_args)
 
@@ -1874,8 +1874,7 @@ class BaseModel(list):
                 )
         else:
             raise ValueError(
-                "`grad` must be one of ['analytical', callable, None], not "
-                f"'{grad}'."
+                f"`grad` must be one of ['analytical', callable, None], not '{grad}'."
             )
 
         with cm(update_on_resume=True):
