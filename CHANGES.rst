@@ -1,3 +1,7 @@
+.. _RosettaSciIO: https://hyperspy.org/rosettasciio
+.. _eXSpy: https://hyperspy.org/exspy
+.. _holoSpy: https://hyperspy.org/holospy
+
 .. _changelog:
 
 Changelog
@@ -211,11 +215,11 @@ Release Highlights
 ------------------
 - Hyperspy has split off some of the file reading/writing and domain specific functionalities into separate libraries!
   
-  - `RosettaSciIO <https://hyperspy.org/rosettasciio>`_: A library for reading and writing scientific data files.
+  - RosettaSciIO_: A library for reading and writing scientific data files.
     See `RosettaSciIO release notes <https://hyperspy.org/rosettasciio/changes.html>`_ for new features and supported formats.
-  - `exSpy <https://exspy.readthedocs.io>`_: A library for EELS and EDS analysis.
-    See `exSpy release notes <https://hyperspy.org/exspy/changes.html>`_ for new features.
-  - `holoSpy <https://holospy.readthedocs.io>`_: A library for analysis of (off-axis) electron holography data.
+  - eXSpy_: A library for EELS and EDS analysis.
+    See `eXSpy release notes <https://hyperspy.org/exspy/changes.html>`_ for new features.
+  - holoSpy_: A library for analysis of (off-axis) electron holography data.
     See `holoSpy release notes <https://holospy.readthedocs.io/en/latest/changes.html>`_ for new features.
 
 - The :py:mod:`~.api.plot.markers` API has been refactored

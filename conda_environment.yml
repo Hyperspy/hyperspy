@@ -15,9 +15,7 @@ dependencies:
 - packaging
 - pint >=0.10
 - prettytable >=2.3
-- python-dateutil >=2.5.0
 - pyyaml
-- requests
 - rosettasciio-base
 - scikit-image >=0.18
 - scikit-learn >=1.0.1

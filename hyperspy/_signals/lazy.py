@@ -24,6 +24,7 @@ from itertools import product
 import dask
 import dask.array as da
 import numpy as np
+from dask.widgets import TEMPLATE_PATHS
 from rsciio.utils import rgb_tools
 from rsciio.utils.tools import get_file_handle
 
@@ -48,16 +49,10 @@ _logger = logging.getLogger(__name__)
 
 lazyerror = NotImplementedError("This method is not available in lazy signals")
 
-
-try:
-    from dask.widgets import TEMPLATE_PATHS
-
-    templates_path = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "misc", "dask_widgets"
-    )
-    TEMPLATE_PATHS.append(templates_path)
-except ModuleNotFoundError:
-    _logger.info("Dask widgets not loaded (dask >=2021.11.1 is required)")
+templates_path = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "misc", "dask_widgets"
+)
+TEMPLATE_PATHS.append(templates_path)
 
 
 def _get():
